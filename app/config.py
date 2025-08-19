@@ -1,3 +1,4 @@
+cat > app/config.py <<'PY'
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
@@ -38,3 +39,5 @@ class Settings(BaseSettings):
         return v
 
 settings = Settings()
+PY
+

@@ -1,3 +1,4 @@
+cat > tests/test_routers_smoke.py <<'PY'
 from fastapi.testclient import TestClient
 import importlib
 
@@ -14,3 +15,5 @@ def test_health_ok():
     client = TestClient(get_app())
     r = client.get("/health")
     assert r.status_code in (200, 204)
+PY
+

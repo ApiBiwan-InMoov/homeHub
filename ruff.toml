@@ -1,3 +1,4 @@
+cat > ruff.toml <<'RT'
 target-version = "py312"
 line-length = 100
 
@@ -10,3 +11,5 @@ quote-style = "double"
 
 [isort]
 known-first-party = ["app"]
+RT
+

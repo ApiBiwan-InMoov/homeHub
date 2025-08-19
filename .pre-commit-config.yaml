@@ -1,3 +1,4 @@
+cat > .pre-commit-config.yaml <<'PC'
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
@@ -11,3 +12,5 @@ repos:
       - id: check-merge-conflict
       - id: end-of-file-fixer
       - id: trailing-whitespace
+PC
+
