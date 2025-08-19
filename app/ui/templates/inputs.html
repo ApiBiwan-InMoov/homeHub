@@ -1,0 +1,315 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Inputs & Rules</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <script src="/static/menu.js" defer></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+  <div class="max-w-6xl mx-auto p-4 space-y-6">
+    <header class="flex items-center justify-between gap-3 flex-wrap">
+      <h1 class="text-2xl font-bold">IPX Inputs & Rules</h1>
+      <a href="/" class="text-sm underline opacity-90">← Home</a>
+    </header>
+
+    <!-- Meta line: counts + last poll + last error -->
+    <p id="meta" class="text-sm opacity-80"></p>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- Digital Inputs -->
+      <section class="rounded-2xl p-4 bg-slate-800">
+        <h2 class="font-semibold mb-3">Digital (Buttons)</h2>
+        <div id="digital" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </section>
+
+      <!-- Analog Inputs -->
+      <section class="rounded-2xl p-4 bg-slate-800">
+        <h2 class="font-semibold mb-3">Analog</h2>
+        <div id="analog" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </section>
+    </div>
+
+    <!-- Rules -->
+    <section class="rounded-2xl p-4 bg-slate-800">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">Rules</h2>
+        <div class="flex gap-2">
+          <button id="new-rule" class="rounded px-3 py-1 bg-slate-700">New rule</button>
+          <button id="refresh" class="rounded px-3 py-1 bg-slate-700">Refresh</button>
+        </div>
+      </div>
+      <div id="rules" class="mt-3"></div>
+    </section>
+
+    <!-- Logs -->
+    <section class="rounded-2xl p-4 bg-slate-800">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">Recent Events</h2>
+        <button id="refresh-logs" class="rounded px-3 py-1 bg-slate-700">Refresh logs</button>
+      </div>
+      <div id="logs" class="mt-3 text-sm"></div>
+    </section>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/50">
+    <div class="bg-slate-800 rounded-2xl p-4 w-full max-w-lg shadow space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Create Rule</h3>
+        <button id="modal-close" class="text-sm opacity-80">✕</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-sm">Input type
+          <select id="f-type" class="w-full bg-slate-700 rounded px-2 py-1">
+            <option value="digital" selected>digital</option>
+            <option value="analog">analog</option>
+          </select>
+        </label>
+        <label class="text-sm">Index
+          <input id="f-index" type="number" value="0" class="w-full bg-slate-700 rounded px-2 py-1">
+        </label>
+        <label class="text-sm">Trigger
+          <select id="f-trigger" class="w-full bg-slate-700 rounded px-2 py-1">
+            <option value="on_rising" selected>on_rising (digital)</option>
+            <option value="on_falling">on_falling (digital)</option>
+            <option value="on_change">on_change (digital)</option>
+            <option value="above">above (analog)</option>
+            <option value="below">below (analog)</option>
+            <option value="cross_up">cross_up (analog)</option>
+            <option value="cross_down">cross_down (analog)</option>
+          </select>
+        </label>
+        <label class="text-sm">Threshold
+          <input id="f-thr" type="number" step="0.01" placeholder="optional" class="w-full bg-slate-700 rounded px-2 py-1">
+        </label>
+        <label class="text-sm">Cooldown (s)
+          <input id="f-cool" type="number" step="0.1" value="0" class="w-full bg-slate-700 rounded px-2 py-1">
+        </label>
+        <label class="text-sm">Action
+          <select id="f-action" class="w-full bg-slate-700 rounded px-2 py-1">
+            <option value="toggle_relay" selected>toggle_relay</option>
+            <option value="set_relay_on">set_relay_on</option>
+            <option value="set_relay_off">set_relay_off</option>
+            <option value="webhook">webhook</option>
+          </select>
+        </label>
+        <label class="text-sm">Relay #
+          <input id="f-relay" type="number" value="1" class="w-full bg-slate-700 rounded px-2 py-1">
+        </label>
+        <label class="text-sm col-span-2">Webhook URL
+          <input id="f-url" type="text" placeholder="http://..." class="w-full bg-slate-700 rounded px-2 py-1">
+        </label>
+      </div>
+      <div class="flex items-center justify-end gap-2">
+        <button id="modal-save" class="rounded px-3 py-1 bg-indigo-600">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let timer = null, logTimer = null;
+
+    function pill(ok) {
+      return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${ok ? 'bg-green-600' : 'bg-slate-700'}">${ok ? 'ON' : 'OFF'}</span>`;
+    }
+
+    async function fetchJSON(url, opts) {
+      const r = await fetch(url, opts);
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    // NOTE: /inputs/status now returns { meta, digital, analog }
+    async function loadStatus() { return fetchJSON('/inputs/status?max_buttons=32&max_analogs=16'); }
+    async function loadRules()  { return fetchJSON('/inputs/rules'); }
+    async function loadLogs()   { return fetchJSON('/inputs/logs?limit=200'); }
+
+    function renderInputs(data) {
+      const dg = document.getElementById('digital');
+      dg.innerHTML = '';
+      data.digital.forEach(d => {
+        const name = d.name?.trim() || `BTN${d.index}`;
+        const div = document.createElement('div');
+        div.className = `rounded-xl p-3 text-center shadow ${d.on ? 'bg-green-600' : 'bg-slate-700'}`;
+        div.innerHTML = `
+          <div class="text-xs opacity-80">btn${d.index}</div>
+          <button class="text-base font-semibold underline decoration-dotted truncate" title="Rename">${name}</button>
+          <div class="text-sm mt-1">${pill(d.on)}</div>
+        `;
+        div.querySelector('button').onclick = async () => {
+          const newName = prompt(`Name for btn${d.index}`, d.name || '');
+          if (newName === null) return;
+          await fetchJSON('/inputs/name', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'digital', index:d.index, name:newName})});
+          refresh();
+        };
+        dg.appendChild(div);
+      });
+
+      const ag = document.getElementById('analog');
+      ag.innerHTML = '';
+      data.analog.forEach(a => {
+        const name = a.name?.trim() || `AN${a.index+1}`;
+        const val = (a.value == null) ? '—' : a.value.toFixed(2);
+        const div = document.createElement('div');
+        div.className = `rounded-xl p-3 text-center shadow bg-slate-700`;
+        div.innerHTML = `
+          <div class="text-xs opacity-80">an${a.index+1}</div>
+          <button class="text-base font-semibold underline decoration-dotted truncate" title="Rename">${name}</button>
+          <div class="text-sm mt-1">Value: <span class="font-semibold">${val}</span></div>
+        `;
+        div.querySelector('button').onclick = async () => {
+          const newName = prompt(`Name for an${a.index+1}`, a.name || '');
+          if (newName === null) return;
+          await fetchJSON('/inputs/name', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'analog', index:a.index, name:newName})});
+          refresh();
+        };
+        ag.appendChild(div);
+      });
+    }
+
+    function ruleRow(r) {
+      const trgLabel = r.trigger.replace(/_/g,' ');
+      const thr = (r.threshold != null) ? `, thr=${r.threshold}` : '';
+      const cool = (r.cooldown_seconds && r.cooldown_seconds>0) ? `, cooldown=${r.cooldown_seconds}s` : '';
+      const actTxt = (r.actions||[]).map(a => {
+        if (a.type.startsWith('set_relay') || a.type==='toggle_relay') return `${a.type}(${a.relay})`;
+        if (a.type==='webhook') return `webhook`;
+        return a.type;
+      }).join(' , ');
+      return `
+        <div class="flex items-center justify-between gap-3 rounded-xl p-3 bg-slate-700 mb-2">
+          <div class="text-sm">
+            <div class="font-semibold">${r.enabled ? '✅' : '⏸️'} ${r.input_type.toUpperCase()} idx ${r.index} – ${trgLabel}${thr}${cool}</div>
+            <div class="opacity-80">Actions: ${actTxt || '(none)'}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button data-id="${r.id}" data-op="test" class="rounded px-2 py-1 bg-indigo-600 text-xs">Test</button>
+            <button data-id="${r.id}" data-op="toggle" class="rounded px-2 py-1 bg-slate-600 text-xs">${r.enabled ? 'Disable' : 'Enable'}</button>
+            <button data-id="${r.id}" data-op="del" class="rounded px-2 py-1 bg-red-600 text-xs">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRules(data) {
+      const box = document.getElementById('rules');
+      box.innerHTML = '';
+      (data.rules || []).forEach(r => box.insertAdjacentHTML('beforeend', ruleRow(r)));
+      box.querySelectorAll('button').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.id, op = btn.dataset.op;
+          if (op === 'del') {
+            if (!confirm('Delete this rule?')) return;
+            await fetchJSON(`/inputs/rules/${id}`, {method:'DELETE'});
+            refresh();
+          } else if (op === 'toggle') {
+            const enable = (btn.textContent === 'Enable');
+            await fetchJSON(`/inputs/rules/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: enable})});
+            refresh();
+          } else if (op === 'test') {
+            await fetchJSON(`/inputs/rules/${id}/test`, {method:'POST'});
+          }
+        };
+      });
+    }
+
+    function renderLogs(data) {
+      const box = document.getElementById('logs');
+      const events = (data.events || []).slice().reverse();
+      box.innerHTML = events.map(ev => {
+        const ts = new Date(ev.ts*1000).toLocaleTimeString();
+        const t  = ev.type;
+        if (t === 'trigger') return `<div class="py-1">[${ts}] 🔔 rule ${ev.rule_id} – ${ev.input_type}[${ev.index}] ${ev.trigger} (${ev.reason})</div>`;
+        if (t === 'action')  return `<div class="py-1">[${ts}] ⚙️ rule ${ev.rule_id} – ${ev.action} ${ev.relay ? '(relay '+ev.relay+')' : ''}</div>`;
+        if (t === 'manual_test') return `<div class="py-1">[${ts}] 🧪 manual test – rule ${ev.rule_id}</div>`;
+        if (t === 'error')   return `<div class="py-1 text-red-300">[${ts}] ❗ ${ev.error}</div>`;
+        return `<div class="py-1">[${ts}] ${t}</div>`;
+      }).join('');
+    }
+
+    // Modal helpers
+    function openModal() {
+      const m = document.getElementById('modal');
+      m.classList.remove('hidden'); m.classList.add('flex');
+    }
+    function closeModal() {
+      const m = document.getElementById('modal');
+      m.classList.add('hidden'); m.classList.remove('flex');
+    }
+
+    async function saveRuleFromForm() {
+      const type = document.getElementById('f-type').value;
+      const index = parseInt(document.getElementById('f-index').value || '0', 10);
+      const trigger = document.getElementById('f-trigger').value;
+      const thrStr = document.getElementById('f-thr').value;
+      const coolStr = document.getElementById('f-cool').value;
+      const actionType = document.getElementById('f-action').value;
+      const relay = parseInt(document.getElementById('f-relay').value || '1', 10);
+      const url = document.getElementById('f-url').value.trim();
+
+      if (type === 'digital' && !['on_rising','on_falling','on_change'].includes(trigger)) { alert('Choose a digital trigger.'); return; }
+      if (type === 'analog'  && !['above','below','cross_up','cross_down'].includes(trigger)) { alert('Choose an analog trigger.'); return; }
+
+      const actions = [];
+      if (actionType === 'webhook') {
+        if (!url) { alert('Webhook URL required'); return; }
+        actions.push({type:'webhook', url});
+      } else {
+        actions.push({type: actionType, relay});
+      }
+
+      await fetchJSON('/inputs/rules', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          input_type: type,
+          index,
+          trigger,
+          threshold: thrStr ? parseFloat(thrStr) : null,
+          cooldown_seconds: coolStr ? parseFloat(coolStr) : 0,
+          actions,
+          enabled: true
+        })
+      });
+      closeModal();
+      refresh();
+    }
+
+    // Wiring
+    document.getElementById('new-rule').onclick = openModal;
+    document.getElementById('modal-close').onclick = closeModal;
+    document.getElementById('modal-save').onclick = saveRuleFromForm;
+    document.getElementById('refresh').onclick = refresh;
+    document.getElementById('refresh-logs').onclick = async () => renderLogs(await loadLogs());
+
+    // Main refresh (uses cached state + meta)
+    async function refresh() {
+      try {
+        const st = await loadStatus(); // {meta, digital, analog}
+        const onCount = st.digital.filter(d => d.on).length;
+        const analogCount = st.analog.filter(a => a.value != null).length;
+        const ts = st.meta?.last_success ? new Date(st.meta.last_success*1000).toLocaleTimeString() : '—';
+        const err = st.meta?.last_error ? ` • Error: ${st.meta.last_error}` : '';
+        document.getElementById('meta').textContent =
+          `Digital: ${onCount}/${st.digital.length} pressed • Analog: ${analogCount} channels • Last poll: ${ts}${err}`;
+
+        renderInputs(st);
+        const rules = await loadRules(); renderRules(rules);
+        renderLogs(await loadLogs());
+      } catch (e) {
+        console.error(e);
+        document.getElementById('meta').textContent = 'Failed to load inputs: ' + e;
+      }
+    }
+
+    // Auto-refresh
+    refresh();
+    setInterval(refresh, 10000);
+    setInterval(async () => renderLogs(await loadLogs()), 8000);
+  </script>
+</body>
+</html>
+

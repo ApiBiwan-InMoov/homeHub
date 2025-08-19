@@ -1,0 +1,12 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "N", "ASYNC"]
+ignore = ["E501"]
+
+[format]
+quote-style = "double"
+
+[isort]
+known-first-party = ["app"]

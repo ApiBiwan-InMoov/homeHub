@@ -1,0 +1,26 @@
+from fastapi import APIRouter, Request, Depends
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from .deps import get_ipx
+
+router = APIRouter(prefix="/ipx", tags=["ipx"])
+templates = Jinja2Templates(directory="app/ui/templates")
+
+@router.get("/status")
+def ipx_status_json(ipx = Depends(get_ipx), max_relays: int = 16):
+    states = ipx.get_outputs(max_relays=max_relays)
+    return {
+        "count": len(states),
+        "relays": [
+            {"relay": i + 1, "on": bool(states[i])}
+            for i in range(min(max_relays, len(states)))
+        ],
+    }
+
+@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
+def ipx_status_page(request: Request):
+    # Page fetches JSON via JS
+    return templates.TemplateResponse("ipx_status.html", {"request": request})
+

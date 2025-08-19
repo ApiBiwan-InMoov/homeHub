@@ -1,0 +1,11 @@
+services:
+  homehub:
+    build: ./docker
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./secrets:/app/secrets:ro
+      - ./app:/app/app:rw
+    restart: unless-stopped

@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Weather – Next 18h</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="/static/menu.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+  <div class="max-w-4xl mx-auto p-4 space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">Weather – Next 18 hours</h1>
+      <a href="/" class="text-sm underline opacity-90">← Home</a>
+    </header>
+
+    <div id="sun-times" class="text-sm opacity-90 space-y-1"></div>
+
+    <div class="rounded-2xl bg-slate-800 p-4 shadow">
+      <canvas id="wxChart" height="140"></canvas>
+    </div>
+
+    <p class="text-xs opacity-70">Source: Open-Meteo • Local time</p>
+  </div>
+
+  <script>
+    async function loadData() {
+      const r = await fetch('/weather/hourly');
+      return await r.json();
+    }
+
+    function fmtHour(iso) {
+      // ISO like "2025-08-03T15:00"
+      const d = new Date(iso);
+      return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+
+    function fmtSun(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderSunTimes(sun) {
+      const el = document.getElementById('sun-times');
+      if (!sun || !sun.length) { el.textContent = 'No sunrise/sunset data.'; return; }
+      const today = sun[0];
+      let html = '';
+      if (today.sunrise) html += `<div>🌅 Sunrise: <span class="font-semibold">${fmtSun(today.sunrise)}</span></div>`;
+      if (today.sunset)  html += `<div>🌇 Sunset: <span class="font-semibold">${fmtSun(today.sunset)}</span></div>`;
+      if (sun[1]) {
+        if (sun[1].sunrise) html += `<div class="opacity-80">Tomorrow 🌅: ${fmtSun(sun[1].sunrise)}</div>`;
+        if (sun[1].sunset)  html += `<div class="opacity-80">Tomorrow 🌇: ${fmtSun(sun[1].sunset)}</div>`;
+      }
+      el.innerHTML = html;
+    }
+
+    function renderChart(hours) {
+      const ctx = document.getElementById('wxChart').getContext('2d');
+      const labels = hours.map(h => fmtHour(h.time));
+      const temps = hours.map(h => h.temperature);
+      const pops  = hours.map(h => (h.precip_prob ?? null));
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Temperature (°C)',
+              data: temps,
+              yAxisID: 'y',
+              tension: 0.3,
+              pointRadius: 2,
+            },
+            {
+              label: 'Precip. probability (%)',
+              data: pops,
+              yAxisID: 'y1',
+              tension: 0.3,
+              pointRadius: 2,
+            },
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            y: {
+              position: 'left',
+              title: { display: true, text: '°C' },
+              grid: { display: true }
+            },
+            y1: {
+              position: 'right',
+              title: { display: true, text: '%' },
+              min: 0, max: 100,
+              grid: { drawOnChartArea: false }
+            },
+            x: {
+              title: { display: true, text: 'Local time (next 18 hours)' }
+            }
+          },
+          plugins: {
+            legend: { display: true },
+            tooltip: { enabled: true }
+          }
+        }
+      });
+    }
+
+    (async () => {
+      const data = await loadData();
+      renderSunTimes(data.sun);
+      renderChart(data.hours);
+    })();
+  </script>
+</body>
+</html>
+

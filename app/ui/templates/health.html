@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  
+  <meta charset="utf-8" />
+  <title>Health</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="/static/menu.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen">
+  <div class="max-w-3xl mx-auto p-4 space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">System Health</h1>
+      <a href="/" class="text-sm underline opacity-90">← Home</a>
+    </header>
+
+    <div id="overall" class="rounded-2xl p-4 bg-slate-800"></div>
+
+    <div class="grid gap-4 sm:grid-cols-3">
+      <div class="rounded-2xl p-4 bg-slate-800">
+        <h2 class="font-semibold mb-2">Google Calendar</h2>
+        <div id="g-status" class="text-sm"></div>
+      </div>
+      <div class="rounded-2xl p-4 bg-slate-800">
+        <h2 class="font-semibold mb-2">IPX800</h2>
+        <div id="i-status" class="text-sm"></div>
+      </div>
+      <div class="rounded-2xl p-4 bg-slate-800">
+        <h2 class="font-semibold mb-2">Weather API</h2>
+        <div id="w-status" class="text-sm"></div>
+      </div>
+    </div>
+
+    <button id="refresh" class="rounded-xl px-4 py-2 bg-slate-700">Refresh</button>
+  </div>
+
+  <script>
+    function badge(ok) {
+      return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${ok ? 'bg-green-600' : 'bg-red-600'}">
+        ${ok ? 'OK' : 'FAIL'}
+      </span>`;
+    }
+    async function load() {
+      const r = await fetch('/health');
+      const d = await r.json();
+      document.getElementById('overall').innerHTML =
+        `Overall: ${badge(d.ok)} <span class="text-sm opacity-80">(${new Date().toLocaleTimeString()})</span>`;
+      document.getElementById('g-status').innerHTML =
+        `${badge(d.checks.google.ok)} <span class="opacity-80">${d.checks.google.detail || ''}</span>`;
+      document.getElementById('i-status').innerHTML =
+        `${badge(d.checks.ipx.ok)} <span class="opacity-80">${d.checks.ipx.detail || ''}</span>`;
+      document.getElementById('w-status').innerHTML =
+        `${badge(d.checks.weather.ok)} <span class="opacity-80">${d.checks.weather.detail || ''}</span>`;
+    }
+    document.getElementById('refresh').onclick = load;
+    load();
+  </script>
+</body>
+</html>
+
