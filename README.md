@@ -23,3 +23,4 @@ Endpoints may vary by firmware. Adjust `app/ipx800/client.py` `set_relay` / `rea
 
 ## Deployment (Raspberry Pi)
 Create a venv, install requirements, then use the provided systemd unit in `deploy/homehub.service`.
+# homeHub
