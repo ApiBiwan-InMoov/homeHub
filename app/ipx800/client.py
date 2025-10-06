@@ -283,6 +283,9 @@ class IPX800Client:
 
         scheme = "https" if self.port == 443 else "http"
         self.base_url = f"{scheme}://{self.host}:{self.port}"
+        # Maintain backward compatibility with legacy code/tests that
+        # referenced the ``base`` attribute directly.
+        self.base = self.base_url
 
     # ---- Public API (sync) ----
 

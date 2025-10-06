@@ -21,6 +21,20 @@ router = APIRouter(prefix="/status/icons", tags=["status-icons"])
 templates = Jinja2Templates(directory="app/ui/templates")
 
 
+def _is_multipart_available() -> bool:
+    """Return True when the optional python-multipart dependency is installed."""
+
+    try:  # pragma: no cover - import side effect only
+        import multipart  # type: ignore  # noqa: F401
+        from multipart.multipart import parse_options_header  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+_HAS_MULTIPART = _is_multipart_available()
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # load icon images helpers
 # ──────────────────────────────────────────────────────────────────────────────
@@ -943,35 +957,51 @@ def icon_library_delete(name: str):
     return {"ok": True, "deleted": name}
 
 
-@router.post("/icon_library/upload", response_class=JSONResponse)
-async def upload_icons(files: list[UploadFile] = File(...), overwrite: bool = Query(False)):
-    d = _ensure_icon_dir()
-    saved, rejected = [], []
-    for f in files:
-        raw = (f.filename or "").strip()
-        name = Path(raw).name
-        if not name:
-            rejected.append({"file": raw, "reason": "empty_name"})
-            continue
-        if not _is_safe_icon_name(name):
-            rejected.append({"file": name, "reason": "invalid_name_or_ext"})
-            continue
+if _HAS_MULTIPART:
 
-        dest = d / name
-        if dest.exists() and not overwrite:
-            stem, ext = dest.stem, dest.suffix
-            i = 1
-            while (d / f"{stem}-{i}{ext}").exists():
-                i += 1
-            dest = d / f"{stem}-{i}{ext}"
+    @router.post("/icon_library/upload", response_class=JSONResponse)
+    async def upload_icons(files: list[UploadFile] = File(...), overwrite: bool = Query(False)):
+        d = _ensure_icon_dir()
+        saved, rejected = [], []
+        for f in files:
+            raw = (f.filename or "").strip()
+            name = Path(raw).name
+            if not name:
+                rejected.append({"file": raw, "reason": "empty_name"})
+                continue
+            if not _is_safe_icon_name(name):
+                rejected.append({"file": name, "reason": "invalid_name_or_ext"})
+                continue
 
-        content = await f.read()
-        with dest.open("wb") as out:
-            out.write(content)
+            dest = d / name
+            if dest.exists() and not overwrite:
+                stem, ext = dest.stem, dest.suffix
+                i = 1
+                while (d / f"{stem}-{i}{ext}").exists():
+                    i += 1
+                dest = d / f"{stem}-{i}{ext}"
 
-        saved.append({"name": dest.name, "url": _icon_url(dest.name)})
+            content = await f.read()
+            with dest.open("wb") as out:
+                out.write(content)
 
-    return {"saved": saved, "rejected": rejected}
+            saved.append({"name": dest.name, "url": _icon_url(dest.name)})
+
+        return {"saved": saved, "rejected": rejected}
+
+else:
+
+    @router.post("/icon_library/upload", response_class=JSONResponse)
+    async def upload_icons(overwrite: bool = Query(False)):
+        """Return a helpful error when the optional dependency is missing."""
+
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "File uploads require the optional dependency 'python-multipart'. "
+                "Install it to enable icon uploads."
+            ),
+        )
 
 
 @router.get("/icon_library/ui", response_class=HTMLResponse)
