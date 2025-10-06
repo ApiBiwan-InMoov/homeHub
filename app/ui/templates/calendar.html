@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Calendar · HomeHub{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6 flex items-center justify-between">
+  <span>Calendar</span>
+  <button id="btn-refresh" class="px-3 py-1 rounded-lg border border-slate-600 bg-slate-800 hover:bg-slate-700 text-sm">
+    Refresh
+  </button>
+</h1>
+
+<div id="cal-root" class="space-y-10"></div>
+
+<style>
+/* a couple of tiny helpers so the layout is crisp even without Tailwind build tweaks */
+.cal-grid { display: grid; grid-template-columns: 64px 220px 1fr 130px; gap: .75rem; }
+@media (max-width: 900px){ .cal-grid { grid-template-columns: 56px 160px 1fr 110px; } }
+@media (max-width: 700px){ .cal-grid { grid-template-columns: 56px 1fr; } .cal-hide-sm { display:none; } }
+.cal-daybox {
+  width: 56px; height: 56px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius: .75rem; border:1px solid #334155; background: rgba(30,41,59,.7);
+  font-weight: 700; font-size: 1.25rem;
+}
+.cal-pill, .cal-card, .cal-trip {
+  border:1px solid #334155; border-radius:.75rem; background: rgba(30,41,59,.6);
+  padding: .5rem .75rem; display:flex; align-items:center;
+}
+.cal-pill { font-weight:600; }
+.cal-month { font-size: 1.125rem; font-weight: 600; border-bottom:1px solid #334155; padding-bottom:.25rem; }
+</style>
+
+<script>
+// ---------- Configuration ----------
+const EVENTS_URL = '/calendar/events?days=60';
+
+/* Calendar color mapping (edit to suit your calendars).
+   Values can be any CSS color. If a calendar isn't listed, a deterministic color is generated. */
+const CAL_COLORS = {
+  "Family": "#22d3ee",
+  "Work":   "#a78bfa",
+  "Home":   "#34d399",
+  "Personal": "#f59e0b"
+};
+
+// ---------- Helpers ----------
+function hashStr(s) { let h = 2166136261; for (let i=0;i<s.length;i++) h = (h ^ s.charCodeAt(i)) * 16777619; return Math.abs(h>>>0); }
+function fallbackColor(name){
+  const idx = hashStr(name||"Default") % 8;
+  const hues = [200, 160, 280, 30, 340, 190, 120, 260]; // nice palette
+  return `hsl(${hues[idx]} 80% 60%)`;
+}
+function colorForCalendar(name){
+  return CAL_COLORS[name] || fallbackColor(name);
+}
+
+async function loadEvents(){
+  const r = await fetch(EVENTS_URL, { cache:'no-store' });
+  if (!r.ok) throw new Error(await r.text());
+  let events = await r.json();
+  if (!Array.isArray(events)) events = events?.events || [];
+  // normalize
+  events = events.filter(e => e && e.start).map(e => ({
+    title: e.title ?? e.summary ?? '',
+    start: e.start,
+    end: e.end ?? null,
+    calendar: e.calendar ?? e.calendar_name ?? e.source ?? 'Default',
+    description: e.description ?? '',
+    location: e.location ?? '',
+    all_day: !!(e.all_day || e.is_all_day),
+    // optional custom fields some feeds provide:
+    trip_minutes: e.trip_minutes ?? e.travel_minutes ?? e.drive_minutes ?? e.duration_mins ?? null
+  }));
+  return events;
+}
+
+function monthKey(d){
+  return d.toLocaleString(undefined, { month:'long', year:'numeric' }); // e.g., "September 2025"
+}
+
+function groupByMonth(events){
+  const map = new Map();
+  events.forEach(ev => {
+    const key = monthKey(new Date(ev.start));
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(ev);
+  });
+  return Array.from(map.entries())
+    .sort((a,b) => new Date(a[1][0].start) - new Date(b[1][0].start)); // by first event date
+}
+
+function parseTripMinsFromText(txt){
+  if (!txt) return null;
+  const m = String(txt).match(/(\d{1,3})\s*(?:min|mins|minutes)\b/i);
+  return m ? Number(m[1]) : null;
+}
+
+function getTripText(ev){
+  let mins = ev.trip_minutes ?? parseTripMinsFromText(ev.description);
+  if (mins == null && ev.location) mins = parseTripMinsFromText(ev.location);
+  return mins == null ? "—" : `${mins} min`;
+}
+
+// ---------- Rendering ----------
+function el(tag, cls, text){ const d=document.createElement(tag); if(cls) d.className=cls; if(text!=null) d.textContent=text; return d; }
+
+function row(ev){
+  const color = colorForCalendar(ev.calendar);
+  const start = new Date(ev.start);
+  const dayNum = start.getDate();
+
+  const wrap = el('div', 'cal-grid items-center');
+
+  // Day square
+  const dayBox = el('div', 'cal-daybox');
+  dayBox.textContent = String(dayNum).padStart(2,'0');
+  wrap.appendChild(dayBox);
+
+  // Calendar name cell
+  const cal = el('div', 'cal-pill cal-hide-sm');
+  cal.textContent = ev.calendar || 'Default';
+  cal.style.borderColor = color;
+  wrap.appendChild(cal);
+
+  // Title cell (event title / optional location)
+  const title = el('div', 'cal-card');
+  title.style.borderColor = color;
+  const t = el('div', 'font-semibold mr-2', ev.title || '(no title)');
+  const loc = ev.location ? el('div', 'opacity-80 text-sm', `· ${ev.location}`) : null;
+  title.appendChild(t);
+  if (loc) title.appendChild(loc);
+  wrap.appendChild(title);
+
+  // Trip duration cell
+  const trip = el('div', 'cal-trip cal-hide-sm');
+  trip.style.borderColor = color;
+  const txt = getTripText(ev);
+  const icon = el('span', 'mr-2', '🚗'); // swap for any icon set you use
+  trip.appendChild(icon);
+  trip.appendChild(el('span', '', txt));
+  wrap.appendChild(trip);
+
+  return wrap;
+}
+
+function monthSection(label, events){
+  events.sort((a,b) => new Date(a.start) - new Date(b.start));
+  const box = el('div', 'space-y-2');
+  box.appendChild(el('div','cal-month',label));
+  events.forEach(ev => box.appendChild(row(ev)));
+  return box;
+}
+
+async function render(){
+  const root = document.getElementById('cal-root');
+  root.innerHTML = '';
+  const events = await loadEvents();
+  if (!events.length) { root.appendChild(el('div','opacity-80','No events.')); return; }
+  const months = groupByMonth(events);
+  months.forEach(([label, list]) => root.appendChild(monthSection(label, list)));
+}
+
+(function init(){
+  document.getElementById('btn-refresh').addEventListener('click', () => {
+    render().catch(e => alert('Failed to load calendar: ' + e.message));
+  });
+  render().catch(e => alert('Failed to load calendar: ' + e.message));
+})();
+</script>
+{% endblock %}

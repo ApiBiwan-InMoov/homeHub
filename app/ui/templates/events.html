@@ -1,45 +1,527 @@
-<!doctype html>
-<html>
-<head>
- 
-  <meta charset="utf-8" />
-  <title>Upcoming Events</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="/static/menu.js" defer></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-900 text-white min-h-screen">
-  <div class="max-w-4xl mx-auto p-4 space-y-6">
-    <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">Next 10 Events</h1>
-      <a href="/" class="text-sm underline opacity-90">← Home</a>
-    </header>
+{% extends "base.html" %}
+{% block title %}Calendrier · HomeHub{% endblock %}
 
-    <div class="overflow-x-auto rounded-2xl shadow bg-slate-800">
-      <table class="min-w-full text-left text-sm">
-        <thead class="bg-slate-700/50">
-          <tr>
-            <th class="py-3 px-4 font-semibold">When</th>
-            <th class="py-3 px-4 font-semibold">Title</th>
-            <th class="py-3 px-4 font-semibold">Location</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ev in events %}
-          <tr class="border-t border-slate-700/50">
-            <td class="py-3 px-4 whitespace-nowrap">{{ ev.start }}</td>
-            <td class="py-3 px-4">{{ ev.summary }}</td>
-            <td class="py-3 px-4">{{ ev.location }}</td>
-          </tr>
-          {% else %}
-          <tr>
-            <td class="py-4 px-4" colspan="3">No upcoming events.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+{% block content %}
+<div class="max-w-6xl mx-auto p-4 space-y-6">
+  <header class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Calendrier</h1>
+    <div class="flex gap-2">
+      <button id="btnDiscover" class="px-3 py-1 rounded bg-slate-700">Découvrir</button>
+      <button id="btnConfig" class="px-3 py-1 rounded bg-slate-700">Configurer</button>
+      <a href="/calendar/ui/new" class="px-3 py-1 rounded bg-indigo-600">+ Évènement</a>
     </div>
-  </div>
-</body>
-</html>
+  </header>
 
+  <!-- Pager -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <button id="btnPrev" class="px-3 py-1 rounded bg-slate-800 border border-slate-700">← 3 mois</button>
+      <div id="rangeLabel" class="text-sm opacity-80"></div>
+      <button id="btnNext" class="px-3 py-1 rounded bg-slate-800 border border-slate-700">3 mois →</button>
+    </div>
+    <button id="btnRefresh" class="px-3 py-1 rounded bg-slate-800 border border-slate-700">Rafraîchir</button>
+  </div>
+
+  <!-- Error/diagnostic banner -->
+  <div id="errBanner" class="hidden rounded-lg border border-amber-600 bg-amber-600/10 p-3 text-sm whitespace-pre-wrap"></div>
+
+  <div id="events" class="space-y-10"></div>
+</div>
+
+<!-- Config drawer -->
+<div id="cfgOverlay" class="fixed inset-0 bg-black/50 hidden z-40"></div>
+<div id="cfgPanel"
+     class="fixed top-0 right-0 h-full w-full sm:w-[520px] bg-slate-900 shadow-2xl
+            translate-x-full transition-transform z-50 flex flex-col">
+  <div class="p-4 flex items-center justify-between border-b border-white/10 sticky top-0 bg-slate-900 z-10">
+    <h2 class="text-xl font-semibold">Calendriers (local)</h2>
+    <button id="cfgClose" class="px-2 py-1 rounded bg-slate-700">Fermer</button>
+  </div>
+  <div id="homeInfo" class="px-4 py-2 text-xs opacity-80 border-b border-white/10">
+    Origine voiture : chargement…
+  </div>
+  <div id="cfgList" class="p-4 space-y-2 flex-1 overflow-y-auto"></div>
+  <div class="p-4 border-t border-white/10 flex items-center justify-end gap-2 sticky bottom-0 bg-slate-900 z-10">
+    <button id="cfgSave" class="px-3 py-1 rounded bg-indigo-600">Enregistrer</button>
+  </div>
+</div>
+
+<style>
+  .cal-grid { display: grid; grid-template-columns: 64px 160px 220px 1fr 130px; gap: .75rem; }
+  @media (max-width:1100px){ .cal-grid{ grid-template-columns:56px 140px 180px 1fr 110px; } }
+  @media (max-width:900px){ .cal-grid{ grid-template-columns:56px 140px 1fr; } .cal-hide-md{ display:none; } }
+  @media (max-width:700px){ .cal-grid{ grid-template-columns:56px 1fr; } .cal-hide-sm{ display:none; } }
+
+  .cal-daybox { width:56px; height:56px; display:flex; align-items:center; justify-content:center;
+                border-radius:.75rem; border:1px solid #334155; background: rgba(30,41,59,.7);
+                font-weight:700; font-size:1.25rem; }
+  .cal-pill, .cal-card, .cal-chip { border:1px solid #334155; border-radius:.75rem; background: rgba(30,41,59,.6);
+                                     padding:.5rem .75rem; display:flex; align-items:center; }
+  .cal-pill { font-weight:600; }
+  .cal-month { font-size:1.125rem; font-weight:600; border-bottom:1px solid #334155; padding-bottom:.25rem; }
+  .subtle { opacity:.75; font-size:.85rem; }
+</style>
+
+<script>
+(function(){
+
+  function boot(){
+    var $errBanner = document.getElementById('errBanner');
+    function showErr(msg){ $errBanner.textContent = String(msg); $errBanner.classList.remove('hidden'); }
+
+    var $events = document.getElementById('events');
+    var $cfgOverlay = document.getElementById('cfgOverlay');
+    var $cfgPanel   = document.getElementById('cfgPanel');
+    var $cfgList    = document.getElementById('cfgList');
+    var $homeInfo   = document.getElementById('homeInfo');
+    var $rangeLabel = document.getElementById('rangeLabel');
+
+    // ===== pagination (3 months) =====
+    var MONTHS_PER_PAGE = 3;
+    var page = 0;
+    function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function addMonths(d, n){ return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+    function formatMonthYear(d){ return d.toLocaleString(undefined, {month:'long', year:'numeric'}); }
+    function formatMonthShort(d){ return d.toLocaleString(undefined, {month:'short'}); }
+    function windowStart(){ return addMonths(startOfMonth(new Date()), page * MONTHS_PER_PAGE); }
+    function windowEnd(){ return addMonths(windowStart(), MONTHS_PER_PAGE); }
+    function updateRangeLabel(){
+      var a = windowStart(), b = addMonths(a, MONTHS_PER_PAGE - 1);
+      var txt = (a.getFullYear() === b.getFullYear())
+        ? (formatMonthShort(a) + '–' + formatMonthShort(b) + ' ' + a.getFullYear())
+        : (formatMonthShort(a) + ' ' + a.getFullYear() + ' – ' + formatMonthShort(b) + ' ' + b.getFullYear());
+      $rangeLabel.textContent = txt;
+    }
+
+    // ===== helpers =====
+    function el(tag, cls, text){ var d=document.createElement(tag); if(cls) d.className=cls; if(text!=null) d.textContent=text; return d; }
+    function fetchJson(url){
+      return fetch(url, { cache: 'no-store' }).then(function(res){
+        if (!res.ok) return res.text().then(function(t){ throw new Error('HTTP '+res.status+' @ '+url+'\n'+t.slice(0,300)); });
+        return res.json();
+      });
+    }
+    function isAllDay(ev){
+  return !!(ev && ev.start && ev.start.date && !ev.start.dateTime);
+}
+function daySpan(startISO, endISO, allDay){
+  if (!startISO || !endISO) return 1;
+  var s = new Date(startISO), e = new Date(endISO);
+  if (allDay){
+    // Google all-day: end is exclusive => show (end-1) to users
+    var sd = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+    var ed = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+    var days = Math.max(1, Math.round((ed - sd)/86400000));
+    return days;
+  } else {
+    var diff = (e - s) / 86400000;
+    return Math.max(1, Math.ceil(diff)); // counts partial days
+  }
+}
+function rangeText(startISO, endISO, allDay){
+  if (!startISO || !endISO) return '';
+  var ds = new Date(startISO), de = new Date(endISO);
+  if (allDay){
+    // end exclusive -> display previous day as last day
+    de = new Date(de.getFullYear(), de.getMonth(), de.getDate() - 1);
+  }
+  var fmtD = d => String(d.getDate()).padStart(2,'0');
+  var fmtM = d => d.toLocaleString(undefined,{month:'short'});
+  var sameMY = ds.getMonth()===de.getMonth() && ds.getFullYear()===de.getFullYear();
+  return sameMY
+    ? (fmtD(ds)+'–'+fmtD(de)+' '+fmtM(ds))
+    : (fmtD(ds)+' '+fmtM(ds)+' → '+fmtD(de)+' '+fmtM(de));
+}
+
+    function normalizeItems(payload){
+      var arr = (payload && (payload.items || payload.events)) || payload || [];
+      return Array.isArray(arr) ? arr : [];
+    }
+    function fallbackColor(name){
+      var hues=[200,160,280,30,340,190,120,260], h=2166136261, s=String(name||'x');
+      for (var i=0;i<s.length;i++){ h=(h ^ s.charCodeAt(i)) * 16777619; }
+      return 'hsl(' + (hues[Math.abs(h>>>0)%hues.length]) + ' 80% 60%)';
+    }
+    function monthKey(d){ return d.toLocaleString(undefined, {month:'long', year:'numeric'}); }
+    function fmtTime(iso){ if(!iso) return '—'; var d=new Date(iso); return d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}); }
+    function computeDuration(start, end, allDay){
+      if (allDay) return 'jour entier';
+      if (!start || !end) return '—';
+      var s=new Date(start), e=new Date(end);
+      var m=Math.round((e-s)/60000); if (m<0) m=0;
+      if (m>=60){ var h=Math.floor(m/60), r=m%60; return r ? (h+'h'+(''+r).padStart(2,'0')) : (h+'h'); }
+      return m+' min';
+    }
+    function getStart(ev){ var s = ev && ev.start || {}; return s.dateTime || s.date || null; }
+    function getEnd(ev){ var e = ev && ev.end || {}; return e.dateTime || e.date || null; }
+    function getCalName(ev){ var org = ev && ev.organizer || {}; return ev.calendarName || org.displayName || org.email || ev.calendarId || 'Default'; }
+    function extractLocationText(ev){
+      var val = ev && ev.location;
+      if (typeof val === 'string') return val;
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        var ks=['displayName','name','address','formatted','query','title','description'];
+        for (var i=0;i<ks.length;i++){ var v=val[ks[i]]; if (typeof v==='string' && v.trim()) return v; }
+        if (val.location && typeof val.location==='object'){
+          for (var j=0;j<ks.length;j++){ var w=val.location[ks[j]]; if (typeof w==='string' && w.trim()) return w; }
+        }
+      }
+      if (Array.isArray(val)){
+        for (var k=0;k<val.length;k++){
+          if (typeof val[k]==='string' && val[k].trim()) return val[k];
+          if (val[k] && typeof val[k]==='object'){
+            var ks2=['displayName','name','address','formatted','query','title','description'];
+            for (var m=0;m<ks2.length;m++){ var x=val[k][ks2[m]]; if (typeof x==='string' && x.trim()) return x; }
+          }
+        }
+      }
+      return '';
+    }
+
+    // ===== config drawer =====
+    function openCfg(){ $cfgOverlay.classList.remove('hidden'); $cfgPanel.classList.remove('translate-x-full'); }
+    function closeCfg(){ $cfgOverlay.classList.add('hidden'); $cfgPanel.classList.add('translate-x-full'); }
+    document.getElementById('cfgClose').onclick = closeCfg;
+    $cfgOverlay.onclick = closeCfg;
+
+    function loadPrefs(){
+      return fetchJson('/calendar/config').then(function(data){
+        var list = data.calendars || [];
+        $cfgList.innerHTML = '';
+        if (!list.length) {
+          $cfgList.innerHTML = '<div class="text-sm opacity-80">Aucun calendrier. Cliquez « Découvrir ».</div>';
+          return;
+        }
+        list.forEach(function(c){
+          var row = document.createElement('div');
+          row.className = "flex items-start justify-between gap-3 p-3 rounded bg-slate-800/60";
+          var defaultColor = c.color || fallbackColor(c.summary||c.id);
+          row.setAttribute('data-id', c.id);
+          row.innerHTML =
+            '<label class="flex items-start gap-3 min-w-0">'+
+              '<input type="checkbox" class="en mt-1" '+(c.enabled?'checked':'')+'>'+
+              '<div class="min-w-0">'+
+                '<div class="font-medium truncate">'+(c.summary||c.id)+'</div>'+
+                '<div class="text-xs opacity-70 break-all">'+c.id+'</div>'+
+                '<div class="text-xs opacity-60">role='+(c.accessRole||'')+(c.primary?' • primary':'')+'</div>'+
+              '</div>'+
+            '</label>'+
+            '<div class="flex items-center gap-2 shrink-0">'+
+              '<span class="text-xs opacity-70">Mode</span>'+
+              '<select class="mode bg-slate-900 rounded px-2 py-1 text-sm">'+
+                '<option value="ro" '+(c.mode==='ro'?'selected':'')+'>RO</option>'+
+                '<option value="rw" '+(c.mode==='rw'?'selected':'')+'>RW</option>'+
+              '</select>'+
+              '<span class="text-xs opacity-70">Couleur</span>'+
+              '<input type="color" class="color w-8 h-8 rounded border border-slate-700" value="'+defaultColor+'">'+
+            '</div>';
+          $cfgList.appendChild(row);
+        });
+      });
+    }
+    document.getElementById('cfgSave').onclick = function(){
+      var rows = [].slice.call($cfgList.querySelectorAll('[data-id]'));
+      var calendars = rows.map(function(div){
+        return {
+          id: div.getAttribute('data-id'),
+          enabled: div.querySelector('input.en').checked,
+          mode: div.querySelector('select.mode').value,
+          color: div.querySelector('input.color').value
+        };
+      });
+      fetch('/calendar/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({calendars:calendars}) })
+        .then(closeCfg).then(render);
+    };
+    document.getElementById('btnConfig').onclick = function(){ loadHomeInfo().then(loadPrefs).then(openCfg); };
+    document.getElementById('btnDiscover').onclick = function(){
+      fetch('/calendar/discover').then(function(){ return loadPrefs(); })
+        .then(function(){ alert('Calendriers mis à jour.'); })
+        .catch(function(e){ showErr('Découverte impossible: ' + (e && e.message || e)); });
+    };
+    document.getElementById('btnRefresh').onclick = function(){ render(); };
+    document.getElementById('btnPrev').onclick = function(){ page -= 1; updateRangeLabel(); render(); };
+    document.getElementById('btnNext').onclick = function(){ page += 1; updateRangeLabel(); render(); };
+
+    function loadHomeInfo(){
+      return fetch('/calendar/drive-config', {cache:'no-store'})
+        .then(function(r){ return r.ok ? r.json() : {}; })
+        .then(function(j){
+          if (j.configured && j.lat!=null && j.lon!=null){
+            $homeInfo.textContent = 'Origine voiture : '+Number(j.lat).toFixed(5)+', '+Number(j.lon).toFixed(5)+' (source: '+j.source+')';
+          } else {
+            $homeInfo.textContent = 'Origine voiture : non configurée (ajoutez LATITUDE/LONGITUDE dans .env)';
+          }
+        })
+        .catch(function(){ $homeInfo.textContent = 'Origine voiture : erreur de lecture'; });
+    }
+
+    // ===== commute queue (lazy per visible row) =====
+    var commuteCache = new Map();   // key: loc|at  -> minutes|null
+    var inflight     = new Map();   // key -> Promise
+    var pending      = [];          // queue of {el, key, loc, at}
+    var MAX_CONCURRENCY = 2;
+    var active = 0;
+
+    function keyFor(loc, at){ return String(loc).trim()+'|'+String(at||'').trim(); }
+
+    function runQueue(){
+      while (active < MAX_CONCURRENCY && pending.length){
+        var job = pending.shift();
+        doFetch(job);
+      }
+    }
+
+    function doFetch(job){
+      active += 1;
+      var url = '/calendar/drive-time?to='+encodeURIComponent(job.loc)+'&at='+(job.at?encodeURIComponent(job.at):'');
+      var ctl = new AbortController();
+      var timeout = setTimeout(function(){ ctl.abort(); }, 8000); // 8s guard
+
+      var p = fetch(url, { signal: ctl.signal }).then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){
+          clearTimeout(timeout);
+          var mins = (j && typeof j.minutes === 'number') ? Math.round(j.minutes) : null;
+          commuteCache.set(job.key, mins);
+          if (job.el && job.el.isConnected){
+            job.el.textContent = (mins!=null ? (mins+' min') : '—');
+          }
+        })
+        .catch(function(){
+          clearTimeout(timeout);
+          commuteCache.set(job.key, null);
+          if (job.el && job.el.isConnected){ job.el.textContent = '—'; }
+        })
+        .finally(function(){
+          inflight.delete(job.key);
+          active -= 1;
+          runQueue();
+        });
+
+      inflight.set(job.key, p);
+    }
+
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(ent){
+        if (!ent.isIntersecting) return;
+        var chip = ent.target;
+        var loc = chip.getAttribute('data-location');
+        var at  = chip.getAttribute('data-at');
+        if (!loc){ chip.querySelector('.js-commute-val').textContent = '—'; return; }
+        var key = keyFor(loc, at);
+        var span = chip.querySelector('.js-commute-val');
+        if (commuteCache.has(key)){
+          var v = commuteCache.get(key);
+          span.textContent = (v!=null ? (v+' min') : '—');
+          return;
+        }
+        if (inflight.has(key)){
+          inflight.get(key).then(function(){
+            var v = commuteCache.get(key);
+            if (chip.isConnected) span.textContent = (v!=null ? (v+' min') : '—');
+          });
+          return;
+        }
+        // queue new job
+        span.textContent = '…';
+        pending.push({ el: span, key: key, loc: loc, at: at });
+        runQueue();
+      });
+    }, { rootMargin: '200px 0px' }); // prefetch a bit before visible
+
+    // ===== row rendering =====
+    function commuteCell(ev, color){
+      var cell = el('div','cal-chip cal-hide-md');
+      cell.style.borderColor = color;
+      cell.appendChild(el('span','mr-2','🚗'));
+      var span = el('span','js-commute-val','—');
+      cell.appendChild(span);
+
+      var locTxt = extractLocationText(ev);
+      var startISO = getStart(ev);
+      cell.setAttribute('data-location', locTxt || '');
+      cell.setAttribute('data-at', startISO || '');
+
+      io.observe(cell);
+      return cell;
+    }
+
+    function timeCell(ev){
+      var s = getStart(ev), e = getEnd(ev);
+      var allDay = isAllDay(ev);
+      var span = daySpan(s, e, allDay);
+      var cell = el('div','cal-card');
+
+      // top line: start time (or — for all-day)
+      cell.appendChild(el('div','font-semibold mr-2', allDay ? '—' : fmtTime(s)));
+
+      // bottom line: duration; prefer “N j” for multi-day
+      if (span > 1){
+        cell.appendChild(el('div','subtle', span + ' j'));
+      } else {
+        cell.appendChild(el('div','subtle', computeDuration(s, e, allDay)));
+      }
+      return cell;
+    }
+
+
+     function row(ev, color){
+      var s = getStart(ev), e = getEnd(ev);
+      var allDay = isAllDay(ev);
+      var span = daySpan(s, e, allDay);
+      var now = new Date();
+      var isOngoing = (s && e) ? (now >= new Date(s) && now < new Date(e)) : false;
+
+      var d = s ? new Date(s) : null;
+      var day = d ? String(d.getDate()).padStart(2,'0') : '--';
+
+      var wrap = el('div','cal-grid items-center');
+
+      // day (with multi-day badge)
+      var dayBox = el('div','cal-daybox', day);
+      var dayWrap = el('div','daywrap');
+      dayWrap.appendChild(dayBox);
+      if (span > 1){
+        dayWrap.appendChild(el('div','cal-badge', span + ' j'));
+      }
+      wrap.appendChild(dayWrap);
+
+      // time + duration
+      var t = timeCell(ev); t.style.borderColor = color;
+      wrap.appendChild(t);
+
+      // calendar name
+      var calName = getCalName(ev);
+      var cal = el('div','cal-pill cal-hide-sm', calName); cal.style.borderColor = color;
+      wrap.appendChild(cal);
+
+      // title (edit link) + optional range chip + location + ongoing chip
+      var title = el('div','cal-card'); title.style.borderColor = color;
+
+      if (span > 1){
+        var rchip = el('div','cal-chip cal-hide-sm cal-range', rangeText(s, e, allDay));
+        rchip.style.borderColor = color;
+        title.appendChild(rchip);
+      }
+
+      var titleLink = document.createElement('a');
+      titleLink.className = 'font-semibold mr-2 underline decoration-dotted';
+      titleLink.textContent = ev.summary || ev.title || '(sans titre)';
+      var calIdForLink = ev.calendarId || (ev.organizer && ev.organizer.email) || '';
+      if (ev.id && calIdForLink){
+        titleLink.href = '/calendar/ui/edit?eventId=' + encodeURIComponent(ev.id) + '&calendarId=' + encodeURIComponent(calIdForLink);
+        titleLink.rel = 'noopener';
+        titleLink.title = 'Modifier';
+      } else {
+        titleLink.href = 'javascript:void(0)';
+      }
+      title.appendChild(titleLink);
+
+      if (isOngoing){
+        var ochip = el('span','cal-chip cal-ongoing','EN COURS');
+        title.appendChild(ochip);
+      }
+
+  var locTxt = extractLocationText(ev);
+  if (locTxt) title.appendChild(el('div','subtle','· ' + locTxt));
+  wrap.appendChild(title);
+
+  // commute (kept as-is)
+  wrap.appendChild(commuteCell(ev, color));
+
+  return wrap;
+}
+
+    function monthSection(label, events, colorsById){
+      events.sort(function(a,b){ return new Date(getStart(a)||0) - new Date(getStart(b)||0); });
+      var box = el('div','space-y-2');
+      box.appendChild(el('div','cal-month', label));
+      if (!events.length){ box.appendChild(el('div','text-sm opacity-60','—')); return box; }
+      for (var i=0;i<events.length;i++){
+        var ev = events[i];
+        var calId = (ev.organizer && ev.organizer.email) || ev.calendarId || '';
+        var col = colorsById[calId] || fallbackColor(calId);
+        box.appendChild(row(ev, col));
+      }
+      return box;
+    }
+
+    // ===== events fetch with auto-fallback =====
+    function loadEvents(time_min, time_max){
+      const base = '/calendar/events?time_min='+encodeURIComponent(time_min)+'&time_max='+encodeURIComponent(time_max);
+      return (async () => {
+        let usedFallback = false;
+        let data = await fetchJson(base + '&strict_window=1');
+        const noWindow = (data.errors || []).some(e => /no window method; skipped/i.test(e.message));
+        if ((data.items || []).length === 0 || noWindow) {
+          usedFallback = true;
+          // modest cap to keep it light
+          data = await fetchJson(base + '&strict_window=0&limit=60');
+        }
+        return { data, usedFallback };
+      })();
+    }
+
+    // ===== render =====
+    function render(){
+      updateRangeLabel();
+      $events.innerHTML = '<div class="opacity-70">Chargement…</div>';
+
+      var tMin = windowStart(), tMax = windowEnd();
+      var time_min = tMin.toISOString(), time_max = tMax.toISOString();
+
+      // colors
+      var colorsById = {};
+      fetchJson('/calendar/config').then(function(cfg){
+        (cfg.calendars||[]).forEach(function(c){ colorsById[c.id] = c.color || fallbackColor(c.summary||c.id); });
+      }).catch(function(){});
+
+      // events (no commute precompute here)
+      loadEvents(time_min, time_max).then(function(res){
+        var data = res.data;
+        var usedFallback = res.usedFallback;
+
+        var errs = (data && data.errors) || [];
+        if (errs.length){
+          var shown = usedFallback
+            ? errs.filter(function(e){ return !/no window method; skipped/i.test(e.message); })
+            : errs;
+          if (shown.length){
+            var txt = shown.map(function(e){ return '• '+(e.calendarId||'?')+': '+(e.message||''); }).join('\n');
+            showErr('Certaines sources ont échoué:\n'+txt);
+          }
+        }
+
+        var items = normalizeItems(data).filter(function(ev){
+          var s = getStart(ev); if(!s) return false;
+          var dt = new Date(s);
+          return dt >= tMin && dt < tMax;
+        });
+
+        var by = {};
+        for (var i=0;i<items.length;i++){
+          var s = getStart(items[i]); var d = new Date(s); var key = monthKey(d);
+          (by[key] = by[key] || []).push(items[i]);
+        }
+        $events.innerHTML = '';
+        for (var m=0;m<3;m++){
+          var md = addMonths(tMin, m), label = formatMonthYear(md);
+          $events.appendChild(monthSection(label, by[label] || [], colorsById));
+        }
+      }).catch(function(err){
+        showErr('Erreur de chargement: ' + (err && err.message || err));
+        $events.innerHTML = '';
+      });
+    }
+
+    // boot
+    render();
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
+})();
+</script>
+{% endblock %}
+fhelpppp

@@ -1,15 +1,15 @@
-cat > ruff.toml <<'RT'
-target-version = "py312"
-line-length = 100
+line-length = 120
 
 [lint]
 select = ["E", "F", "I", "B", "UP", "N", "ASYNC"]
-ignore = ["E501"]
+ignore = [
+  "B008",      # FastAPI: Depends(...) in defaults
+  "ASYNC210",  # async fn calling sync HTTP (we'll refactor later)
+  "E402",      # allow imports not at top (temporary)
+]
 
 [format]
 quote-style = "double"
 
-[isort]
+[lint.isort]
 known-first-party = ["app"]
-RT
-

@@ -7,6 +7,37 @@ from .deps import get_ipx
 router = APIRouter(prefix="/ipx", tags=["ipx"])
 templates = Jinja2Templates(directory="app/ui/templates")
 
+
+def _verify_state(ipx, relay: int, expect: Optional[bool], prev: Optional[bool],
+                  timeout_s: float = 1.8, interval_s: float = 0.15) -> tuple[bool, Optional[bool]]:
+    """
+    Poll outputs until expected state is observed or timeout.
+    - If `expect` is not None, we wait for observed == expect.
+    - Else if `prev` is known, we wait for a flip (observed != prev).
+    Returns (verified, observed_state_or_None).
+    """
+    deadline = time.time() + max(0.2, timeout_s)
+    _log("verify_start", relay=relay, expect=expect, prev=prev, timeout_s=timeout_s, interval_s=interval_s)
+
+    observed: Optional[bool] = None
+    while time.time() < deadline:
+        outs = _get_outputs(ipx)
+        if 0 <= relay - 1 < len(outs):
+            observed = bool(outs[relay - 1])
+            if expect is not None:
+                if observed == expect:
+                    _log("verify_ok", relay=relay, observed=observed)
+                    return True, observed
+            elif prev is not None:
+                if observed != prev:
+                    _log("verify_ok", relay=relay, observed=observed)
+                    return True, observed
+        time.sleep(interval_s)
+
+    _log("verify_timeout", relay=relay, expect=expect, prev=prev, last_observed=observed)
+    return False, observed
+
+
 @router.get("/status")
 def ipx_status_json(ipx = Depends(get_ipx), max_relays: int = 16):
     states = ipx.get_outputs(max_relays=max_relays)
@@ -23,4 +54,3 @@ def ipx_status_json(ipx = Depends(get_ipx), max_relays: int = 16):
 def ipx_status_page(request: Request):
     # Page fetches JSON via JS
     return templates.TemplateResponse("ipx_status.html", {"request": request})
-

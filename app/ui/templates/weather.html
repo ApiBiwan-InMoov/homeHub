@@ -1,121 +1,326 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Weather – Next 18h</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="/static/menu.js" defer></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body class="bg-slate-900 text-white min-h-screen">
-  <div class="max-w-4xl mx-auto p-4 space-y-6">
-    <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">Weather – Next 18 hours</h1>
-      <a href="/" class="text-sm underline opacity-90">← Home</a>
-    </header>
+{% extends "base.html" %}
+{% block title %}Météo{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto p-4 space-y-6">
+  <! -- TODO : hour by hour from now now start of day -->
 
-    <div id="sun-times" class="text-sm opacity-90 space-y-1"></div>
-
-    <div class="rounded-2xl bg-slate-800 p-4 shadow">
-      <canvas id="wxChart" height="140"></canvas>
+  <!-- En-tête -->
+  <header class="flex items-center justify-between flex-wrap gap-3">
+    <h1 class="text-2xl font-bold">Météo — Prochaines 18 h</h1>
+    <div class="text-sm opacity-80">
+      <span id="tz-label"></span>
     </div>
+  </header>
 
-    <p class="text-xs opacity-70">Source: Open-Meteo • Local time</p>
-  </div>
+  <!-- Icône & Message courant -->
+  <section id="current-weather" class="rounded-2xl bg-slate-800/60 p-6 text-center">
+    <div id="weather-icon" class="text-8xl leading-none">⛅</div>
+    <div id="weather-msg" class="text-xl font-semibold mt-2">Chargement…</div>
+    <div id="weather-sub" class="opacity-80 mt-1 text-sm"></div>
+  </section>
 
-  <script>
-    async function loadData() {
-      const r = await fetch('/weather/hourly');
-      return await r.json();
-    }
+  <!-- Graphe Temp (ligne) + Précipitations (barres) -->
+  <section class="rounded-2xl bg-slate-800/60 p-4">
+    <!-- fixed visual height; the canvas will be sized to match -->
+    <div id="wxChartWrap" class="w-full h-72 relative">
+      <canvas id="wxChart" class="w-full h-full"></canvas>
+    </div>
+    <div class="flex items-center gap-4 mt-3 text-sm opacity-80">
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-3 h-3 rounded-full" style="background: rgba(99,102,241,1)"></span>
+        Température (°C)
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="inline-block w-3 h-3 rounded" style="background: rgba(56,189,248,0.7)"></span>
+        Précipitations (mm) — <span class="italic">labels = probabilité (%)</span>
+      </div>
+    </div>
+  </section>
 
-    function fmtHour(iso) {
-      // ISO like "2025-08-03T15:00"
+  <!-- Cartes horaires (18 h à partir de maintenant) -->
+  <section>
+    <div id="hour-cards" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3"></div>
+  </section>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+
+<script>
+(function () {
+  // Keep a single chart instance; destroy before re-creating
+  let WX_CHART = null;
+
+  const fmtHour = (iso, tz) => {
+    try {
       const d = new Date(iso);
-      return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: tz, hour12: false });
+    } catch { return iso; }
+  };
+
+  function wmoToIconAndText(code) {
+    let icon = "☀️", text = "Ciel dégagé", kind = "sec";
+    if (code === 0) { icon="☀️"; text="Ciel dégagé"; }
+    else if ([1].includes(code)) { icon="🌤️"; text="Peu nuageux"; }
+    else if ([2].includes(code)) { icon="🌥️"; text="Partiellement nuageux"; }
+    else if ([3].includes(code)) { icon="☁️"; text="Nuageux"; }
+    else if ([45,48].includes(code)) { icon="🌫️"; text="Brouillard"; }
+    else if ([51,53,55].includes(code)) { icon="🌦️"; text="Bruine"; kind="pluie"; }
+    else if ([56,57].includes(code)) { icon="🌧️"; text="Bruine verglaçante"; kind="pluie verglaçante"; }
+    else if ([61,63,65].includes(code)) { icon="🌧️"; text="Pluie"; kind="pluie"; }
+    else if ([66,67].includes(code)) { icon="🌧️"; text="Pluie verglaçante"; kind="pluie verglaçante"; }
+    else if ([71,73,75,77].includes(code)) { icon="❄️"; text="Neige"; kind="neige"; }
+    else if ([80,81,82].includes(code)) { icon="🌦️"; text="Averses"; kind="pluie"; }
+    else if ([85,86].includes(code)) { icon="🌨️"; text="Averses de neige"; kind="neige"; }
+    else if (code === 95) { icon="⛈️"; text="Orages"; kind="orage"; }
+    else if ([96,99].includes(code)) { icon="⛈️"; text="Orages violents (grêle)"; kind="grêle"; }
+    return { icon, text, kind };
+  }
+
+  function inferMm(h) {
+    const val = h.mm ?? h.precip_mm ?? h.precip ?? h.rain ?? h.snow ?? 0;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // Build a rolling 18-hour window aligned to current local hour (00 min)
+  function build18HoursSlice(hours, tz) {
+    if (!hours || !hours.length) return [];
+    hours = [...hours].sort((a, b) => new Date(a.time) - new Date(b.time));
+
+    // "Now" snapped to current local hour in tz
+    const now = new Date();
+    const nowLocalHour = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+    nowLocalHour.setMinutes(0,0,0);
+
+    // Find first hour >= snapped now
+    let startIdx = hours.findIndex(h => {
+      const dh = new Date(h.time);
+      return dh >= nowLocalHour;
+    });
+
+    // If not found (all hours are in the past), start near the end
+    if (startIdx < 0) startIdx = Math.max(0, hours.length - 18);
+
+    let slice = hours.slice(startIdx, startIdx + 18);
+    if (slice.length < 18) {
+      const missing = 18 - slice.length;
+      const pre = hours.slice(Math.max(0, startIdx - missing), startIdx);
+      slice = pre.concat(slice);
+    }
+    return slice;
+  }
+
+  function rainMessage(pop, kind) {
+    if (pop >= 60) {
+      const t = (kind === 'neige') ? 'neige' :
+                (kind === 'grêle') ? 'grêle' :
+                (kind === 'orage') ? 'orages' : 'pluie';
+      return `Probable ${t} — parapluie conseillé ☔`;
+    } else if (pop >= 30) {
+      const t = (kind === 'neige') ? 'neige' :
+                (kind === 'grêle') ? 'grêle' :
+                (kind === 'orage') ? 'orages' : 'averses possibles';
+      return `${t}`;
+    }
+    return "Pas de pluie attendue";
+  }
+
+  async function main() {
+    const r = await fetch("/weather/hourly");
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+
+    const tz = (data.meta && data.meta.tz) || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    document.getElementById("tz-label").textContent = `Fuseau horaire : ${tz}`;
+
+    const hours = data.hours || [];
+    const slice = build18HoursSlice(hours, tz);
+
+    // Bloc courant
+    if (slice.length) {
+      const h0 = slice[0];
+      const { icon, text, kind } = wmoToIconAndText(Number(h0.code));
+      const mm = inferMm(h0);
+      const msg = rainMessage(Number(h0.pop || 0), kind);
+      document.getElementById("weather-icon").textContent = icon;
+      document.getElementById("weather-msg").textContent = text;
+      document.getElementById("weather-sub").textContent =
+        `${fmtHour(h0.time, tz)} • ${Math.round(h0.temp)}°C • ${mm.toFixed(1)} mm • ${Math.round(h0.pop || 0)}% — ${msg}`;
     }
 
-    function fmtSun(iso) {
-      const d = new Date(iso);
-      return d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    // Données graphe
+    const labels = slice.map(h => fmtHour(h.time, tz));
+    const temps = slice.map(h => Number(h.temp ?? 0));
+    const mms = slice.map(h => inferMm(h));
+    const pops = slice.map(h => Number(h.pop ?? 0));
+
+    // (Re)create chart with fixed height
+    const wrap = document.getElementById("wxChartWrap");
+    const canvas = document.getElementById("wxChart");
+    // Match canvas pixel size to visual box to keep crisp & fixed height
+    canvas.width = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+
+    // Destroy previous instance to avoid stacking drawings
+    if (WX_CHART) {
+      WX_CHART.destroy();
+      WX_CHART = null;
     }
 
-    function renderSunTimes(sun) {
-      const el = document.getElementById('sun-times');
-      if (!sun || !sun.length) { el.textContent = 'No sunrise/sunset data.'; return; }
-      const today = sun[0];
-      let html = '';
-      if (today.sunrise) html += `<div>🌅 Sunrise: <span class="font-semibold">${fmtSun(today.sunrise)}</span></div>`;
-      if (today.sunset)  html += `<div>🌇 Sunset: <span class="font-semibold">${fmtSun(today.sunset)}</span></div>`;
-      if (sun[1]) {
-        if (sun[1].sunrise) html += `<div class="opacity-80">Tomorrow 🌅: ${fmtSun(sun[1].sunrise)}</div>`;
-        if (sun[1].sunset)  html += `<div class="opacity-80">Tomorrow 🌇: ${fmtSun(sun[1].sunset)}</div>`;
-      }
-      el.innerHTML = html;
-    }
-
-    function renderChart(hours) {
-      const ctx = document.getElementById('wxChart').getContext('2d');
-      const labels = hours.map(h => fmtHour(h.time));
-      const temps = hours.map(h => h.temperature);
-      const pops  = hours.map(h => (h.precip_prob ?? null));
-
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: 'Temperature (°C)',
-              data: temps,
-              yAxisID: 'y',
-              tension: 0.3,
-              pointRadius: 2,
-            },
-            {
-              label: 'Precip. probability (%)',
-              data: pops,
-              yAxisID: 'y1',
-              tension: 0.3,
-              pointRadius: 2,
-            },
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          scales: {
-            y: {
-              position: 'left',
-              title: { display: true, text: '°C' },
-              grid: { display: true }
-            },
-            y1: {
-              position: 'right',
-              title: { display: true, text: '%' },
-              min: 0, max: 100,
-              grid: { drawOnChartArea: false }
-            },
-            x: {
-              title: { display: true, text: 'Local time (next 18 hours)' }
-            }
+    WX_CHART = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            type: "line",
+            label: "Température (°C)",
+            data: temps,
+            yAxisID: "yTemp",
+            tension: 0.3,
+            borderColor: "rgba(99,102,241,1)",     // indigo-500
+            backgroundColor: "rgba(99,102,241,0.15)",
+            borderWidth: 2,
+            pointRadius: 2,
+            order: 1,
           },
-          plugins: {
-            legend: { display: true },
-            tooltip: { enabled: true }
-          }
+          {
+            type: "bar",
+            label: "Précipitations (mm)",
+            data: mms,
+            yAxisID: "yMm",
+            backgroundColor: "rgba(56,189,248,0.7)", // sky-400
+            borderWidth: 0,
+            order: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,   // we control height via CSS/JS above
+        layout: { padding: 8 },
+        plugins: {
+          legend: { labels: { color: "#e5e7eb" } },
+          tooltip: {
+            callbacks: {
+              afterBody: (items) => {
+                const i = items[0].dataIndex;
+                const code = Number(slice[i].code);
+                const { text, kind } = wmoToIconAndText(code);
+                const p = Number(slice[i].pop || 0);
+                const mm = mms[i];
+                const typeLabel = (kind === "neige") ? "Neige"
+                                 : (kind === "grêle") ? "Grêle"
+                                 : (kind === "orage") ? "Orage"
+                                 : (mm > 0 || p > 0) ? "Pluie"
+                                 : "Sec";
+                return `Conditions : ${text} — ${typeLabel} • ${p}%`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: "#e5e7eb", maxRotation: 0, autoSkip: true },
+            grid: { color: "rgba(255,255,255,0.08)" },
+          },
+          yTemp: {
+            type: "linear",
+            position: "left",
+            ticks: { color: "#e5e7eb" },
+            grid: { color: "rgba(255,255,255,0.08)" },
+          },
+          yMm: {
+            type: "linear",
+            position: "right",
+            ticks: { color: "#e5e7eb" },
+            grid: { drawOnChartArea: false },
+          },
+        },
+      },
+      plugins: [{
+        // Labels % au-dessus des barres
+        id: 'barLabels',
+        afterDatasetsDraw(chart) {
+          const { ctx, data } = chart;
+          const datasetIndex = data.datasets.findIndex(d => d.type === "bar");
+          if (datasetIndex < 0) return;
+          const meta = chart.getDatasetMeta(datasetIndex);
+          ctx.save();
+          ctx.fillStyle = "#e5e7eb";
+          ctx.font = "12px sans-serif";
+          pops.forEach((p, i) => {
+            const bar = meta.data[i];
+            if (!bar) return;
+            const x = bar.x;
+            const y = bar.y - 6;
+            ctx.textAlign = "center";
+            ctx.fillText(`${Math.round(p)}%`, x, y);
+          });
+          ctx.restore();
         }
-      });
-    }
+      }]
+    });
 
-    (async () => {
-      const data = await loadData();
-      renderSunTimes(data.sun);
-      renderChart(data.hours);
-    })();
-  </script>
-</body>
-</html>
+    // Cartes horaires (18)
+    const $cards = document.getElementById("hour-cards");
+    $cards.innerHTML = "";
+    slice.forEach(h => {
+      const { icon, text, kind } = wmoToIconAndText(Number(h.code));
+      const mm = inferMm(h);
+      const p = Math.round(Number(h.pop || 0));
+      const typeLabel = (kind === "neige") ? "Neige"
+                       : (kind === "grêle") ? "Grêle"
+                       : (kind === "orage") ? "Orage"
+                       : (mm > 0 || p > 0) ? "Pluie"
+                       : "Sec";
+      const card = document.createElement("div");
+      card.className = "rounded-2xl bg-slate-800/60 p-3 shadow flex flex-col items-center text-center";
+      card.innerHTML = `
+        <div class="text-sm opacity-80">${fmtHour(h.time, tz)}</div>
+        <div class="text-3xl my-1">${icon}</div>
+        <div class="text-lg font-semibold">${Math.round(h.temp)}°C</div>
+        <div class="text-sm mt-1">${mm.toFixed(1)} mm • ${p}%</div>
+        <div class="text-xs opacity-80">${typeLabel}</div>
+      `;
+      $cards.appendChild(card);
+    });
+  }
 
+  main().catch(err => {
+    console.error(err);
+    document.getElementById("current-weather").innerHTML =
+      '<div class="text-center text-red-300">Erreur de chargement météo</div>';
+  });
+
+  // Optional: reflow on resize (keeps crisp canvas)
+  window.addEventListener('resize', () => {
+    // Debounce a bit
+    clearTimeout(window.__wx_rsz);
+    window.__wx_rsz = setTimeout(() => {
+      // Re-run to resize & redraw
+      // You might want to cache the last JSON instead of refetching;
+      // for simplicity we refetch here.
+      (async () => {
+        try {
+          const r = await fetch("/weather/hourly");
+          if (!r.ok) return;
+          const data = await r.json();
+          // minimal rebuild using same logic:
+          // reuse main() for consistency
+          // (quick approach; if you prefer, factor main into "render(data)")
+          const wrap = document.getElementById("wxChartWrap");
+          const canvas = document.getElementById("wxChart");
+          canvas.width = wrap.clientWidth;
+          canvas.height = wrap.clientHeight;
+          // Let main handle the rest
+          // (Note: this doubles the fetch; acceptable for simplicity)
+          location.reload();
+        } catch {}
+      })();
+    }, 200);
+  });
+})();
+</script>
+{% endblock %}

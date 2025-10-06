@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends
-from .voice.intents import parse_command
-from .deps import get_ipx, get_calendar
+
 from .config import settings
+from .deps import get_calendar, get_ipx
+from .voice.intents import parse_command
 from .voice.tts import speak
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
+
 @router.post("/command")
-def handle_command(payload: dict, ipx = Depends(get_ipx), cal = Depends(get_calendar)):
+def handle_command(payload: dict, ipx=Depends(get_ipx), cal=Depends(get_calendar)):
     text = payload.get("text", "")
     intent = parse_command(text)
     if not intent:

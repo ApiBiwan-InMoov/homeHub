@@ -1,0 +1,116 @@
+/* app/ui/static/app.css */
+:root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; }
+html, body { background:var(--bg); color:var(--text); }
+a { color:#93c5fd; }
+.border { border-color:var(--border) !important; }
+.bg-panel { background:var(--panel); }
+.rounded-xl { border-radius:0.75rem; }
+
+/* --- Weather/daily chips: avoid icon/text collisions --- */
+.badge { line-height:1.25; }
+.badge .text-2xl { line-height:1.1; }
+.hourchip { min-width:70px; line-height:1.2; }
+
+/* --- Multi-day visuals (calendar) --- */
+.daywrap{ position:relative; width:56px; height:56px; }
+@media (max-width:1100px){ .daywrap{ width:56px; height:56px; } }
+.cal-badge{
+  position:absolute; bottom:-6px; right:-6px;
+  font-size:.70rem; line-height:1; padding:3px 6px;
+  border-radius:9999px; background:#0ea5e9; color:white;
+  box-shadow:0 1px 2px rgba(0,0,0,.3);
+}
+.cal-range{ font-size:.80rem; margin-right:.5rem; }
+.cal-ongoing{
+  border:1px solid #f59e0b; background:rgba(245,158,11,.15);
+  font-weight:700; margin-left:.5rem;
+}
+
+/* --- Icon buttons with countdown overlay --------------------------------- */
+/* Button content stays above the ring; right padding reserves space for bubble */
+.icon-btn{
+  position:relative;
+  overflow:hidden;
+  padding-right:2.4rem;            /* space so the bubble never covers text */
+}
+.icon-btn > *{ position:relative; z-index:2; }  /* content layer */
+
+.icon-cd {
+  position: absolute; inset: 0;
+  /* use the same accent for the ring */
+  background: conic-gradient(
+    color-mix(in srgb, var(--accent) 45%, transparent) var(--deg, 0deg),
+    transparent 0deg
+  );
+  pointer-events: none;
+}
+.icon-cd .bubble {
+  position:absolute; bottom:.45rem; right:.55rem;
+  background: rgba(2,6,23,.7); border: 1px solid rgba(255,255,255,.08);
+  padding: .15rem .45rem; border-radius: 60px;
+  font-size:.75rem; line-height:1; color:#e5e7eb;
+}
+
+/* The conic ring lives UNDER the content */
+.icon-cd{
+  position:absolute; inset:0;
+  z-index:1;
+  background:conic-gradient(rgba(14,165,233,.28) var(--deg,0deg), transparent 0deg);
+  pointer-events:none;
+}
+
+/* Bubble shows remaining time; pinned top-right away from labels */
+.icon-cd .bubble{
+  position:absolute; top:.45rem; right:.55rem;
+  background:rgba(2,6,23,.75);
+  border:1px solid rgba(255,255,255,.08);
+  padding:.15rem .45rem;
+  border-radius:9999px;
+  font-size:.75rem; line-height:1; color:#e5e7eb;
+  z-index:3;        /* bubble above the ring */
+}
+.icon-btn {
+  position: relative;
+  overflow: hidden;
+  --accent: #334155;
+  border-color: var(--accent);
+  color: var(--accent); /* Lucide uses currentColor for stroke */
+  background:
+    linear-gradient(
+      to bottom right,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      rgba(30,41,59,.6)
+    );
+}
+/* Lucide/emoji sizing so icons don’t collide with text */
+.icon-btn .js-ico{ line-height:1; display:flex; align-items:center; }
+.icon-btn .js-ico svg{ width:26px; height:26px; }
+
+/* Optional: keep small labels from wrapping under the bubble on very narrow screens */
+.icon-btn .js-display{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* --- Status icon editor layout fixes --- */
+.row-card { overflow: hidden; }
+
+/* first row grid: Enabled | Label | Icon | Source | Colors  */
+@media (min-width: 768px){
+  .icon-row-grid{
+    display: grid;
+    grid-template-columns: 120px minmax(0,1fr) minmax(0,1fr) 240px 220px;
+    gap: .75rem;
+    align-items: start;
+  }
+}
+
+/* allow text inputs in grid to actually shrink */
+.icon-row-grid input[type="text"],
+.icon-row-grid input[type="number"],
+.icon-row-grid input[type="time"],
+.icon-row-grid select { min-width: 0; }
+
+/* colors group: prevent overlap and allow wrapping on small widths */
+.colors-wrap{ display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+.colors-wrap .swatch{ width: 2.25rem; height: 2.25rem; padding:0; }
+.colors-wrap label{ font-size:.75rem; opacity:.8; }
+
+/* (optional) make number inputs visually consistent */
+input[type="number"] { padding-right:.25rem; }

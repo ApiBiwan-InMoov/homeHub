@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Icon Library · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-4">
+  <header class="flex items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold">Icon Library</h1>
+    <div class="flex items-center gap-2">
+      <input id="file" type="file" multiple class="bg-slate-900 rounded px-2 py-1 border border-slate-700">
+      <label class="flex items-center gap-2 text-sm">
+        <input id="overwrite" type="checkbox"> overwrite
+      </label>
+      <button id="btnUpload" class="px-3 py-1 rounded bg-indigo-600">Upload</button>
+      <button id="btnRefresh" class="px-3 py-1 rounded bg-slate-700">Refresh</button>
+    </div>
+  </header>
+
+  <div class="flex items-center gap-3">
+    <input id="search" placeholder="Filter (ex: lamp, door)…"
+           class="w-80 max-w-full bg-slate-900 rounded px-3 py-2 border border-slate-700">
+    <div id="msg" class="text-sm opacity-80"></div>
+  </div>
+
+  <div id="grid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+</div>
+
+<style>
+.card{border:1px solid #334155;background:rgba(30,41,59,.6);border-radius:.75rem;padding:.5rem;}
+.thumb{aspect-ratio:1/1;background:rgba(15,23,42,.6);border:1px solid #334155;border-radius:.5rem;
+       display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.thumb img{max-width:100%;max-height:100%;display:block;}
+.name{font-size:.75rem;margin-top:.35rem;line-height:1.2;word-break:break-all;}
+.row{display:flex;gap:.35rem;margin-top:.35rem;}
+.row button{border:1px solid #334155;background:rgba(30,41,59,.7);border-radius:.5rem;padding:.25rem .5rem;font-size:.75rem;}
+.row button:hover{background:rgba(30,41,59,.9);}
+.bad{color:#fbbf24;}
+</style>
+
+<script>
+(function(){
+  const $grid = document.getElementById('grid');
+  const $file = document.getElementById('file');
+  const $ow   = document.getElementById('overwrite');
+  const $msg  = document.getElementById('msg');
+  const $src  = document.getElementById('search');
+
+  const params = new URLSearchParams(location.search);
+  const picking = params.get('pick') === '1';
+
+  function say(t){ $msg.textContent = t || ''; }
+
+  function apiList(){ return fetch('/status/icons/icon_library/list',{cache:'no-store'}).then(r=>r.json()); }
+  function apiDel(name){
+    return fetch('/status/icons/icon_library/'+encodeURIComponent(name), { method:'DELETE' })
+      .then(r=> r.ok ? r.json() : Promise.reject(new Error('HTTP '+r.status)));
+  }
+  function copy(text){
+    navigator.clipboard?.writeText(text).then(()=>say('Copied')).catch(()=>{say('Copy failed');});
+  }
+  function use(url){
+    if (picking && window.opener && location.origin === window.origin){
+      window.opener.postMessage({ type:'icon-picked', url }, location.origin);
+      window.close();
+    } else {
+      copy(url);
+    }
+  }
+
+  function fitsFilter(name){
+    const q = $src.value.trim().toLowerCase();
+    if (!q) return true;
+    return name.toLowerCase().includes(q);
+  }
+
+  function draw(items){
+    $grid.innerHTML = '';
+    items
+      .filter(it=>fitsFilter(it.name))
+      .forEach(it=>{
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="thumb"><img alt="" loading="lazy"></div>
+          <div class="name" title="${it.name}">${it.name}</div>
+          <div class="row">
+            <button class="btnUse">Use</button>
+            <button class="btnCopy">Copy</button>
+            <button class="btnDel">Delete</button>
+          </div>
+        `;
+        card.querySelector('img').src = it.url;
+        card.querySelector('.btnUse').addEventListener('click', ()=> use(it.url));
+        card.querySelector('.btnCopy').addEventListener('click', ()=> copy(it.url));
+        card.querySelector('.btnDel').addEventListener('click', async ()=>{
+          if (!confirm('Delete ' + it.name + ' ?')) return;
+          try { await apiDel(it.name); say('Deleted'); load(); } catch(e){ say('Delete failed'); }
+        });
+        $grid.appendChild(card);
+      });
+  }
+
+  async function load(){
+    try{
+      say('Loading…');
+      const j = await apiList();
+      draw(j.items || []);
+      say('');
+    }catch(e){
+      say('Failed to list icons');
+    }
+  }
+
+  document.getElementById('btnRefresh').addEventListener('click', load);
+
+  document.getElementById('btnUpload').addEventListener('click', async ()=>{
+    const fs = $file.files;
+    if (!fs || !fs.length) { say('Pick files first'); return; }
+    const fd = new FormData();
+    for (const f of fs) fd.append('files', f, f.name);
+    fd.append('overwrite', $ow.checked ? '1' : '0');
+    say('Uploading…');
+    try{
+      const r = await fetch('/status/icons/icon_library/upload', { method:'POST', body: fd });
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      say('Uploaded'); $file.value=''; load();
+    }catch(e){
+      say('Upload failed');
+    }
+  });
+
+  $src.addEventListener('input', load);
+  load();
+
+  // help the parent page know we’re a picker
+  if (picking) document.title = 'Pick an Icon · HomeHub';
+})();
+</script>
+{% endblock %}

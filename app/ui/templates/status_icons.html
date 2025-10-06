@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}Icônes · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-6">
+
+  <header class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Icônes de statut</h1>
+    <div class="flex gap-2">
+      <button id="btnHelp" class="px-3 py-1 rounded bg-slate-700">Aide</button>
+      <a href="/status/icons/icon_library/ui" target="_blank" class="px-3 py-1 rounded bg-slate-700">Gérer la librairie</a>
+      <button id="btnAdd" class="px-3 py-1 rounded bg-slate-700">Ajouter</button>
+      <button id="btnSave" class="px-3 py-1 rounded bg-indigo-600">Enregistrer</button>
+    </div>
+  </header>
+
+  <div id="msg" class="hidden rounded border border-amber-600 bg-amber-600/10 p-3 text-sm"></div>
+
+  <!-- Champ icône rapide -->
+  <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-3 space-y-2">
+    <label class="text-sm block opacity-80">Icône rapide</label>
+    <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+      <input id="iconInput" class="flex-1 bg-slate-900 rounded px-3 py-2 border border-slate-700"
+             placeholder="🔥, lucide:thermometer, ou /static/icons/xxx.png">
+      <div class="flex gap-2">
+        <button id="pickIconBtn" type="button" class="px-3 py-2 rounded bg-slate-700">Lucide…</button>
+        <button id="pickLibBtn"  type="button" class="px-3 py-2 rounded bg-slate-700">Librairie…</button>
+      </div>
+    </div>
+    <div class="text-xs opacity-70">Ex: <code>🔥</code>, <code>lucide:thermometer</code> ou
+      <code>/static/icons/garage.png</code></div>
+  </div>
+
+  <div id="list" class="space-y-4"></div>
+</div>
+
+<!-- HELP OVERLAY -->
+<div id="iconsHelpMask" class="fixed inset-0 bg-black/50 hidden z-40"></div>
+<div id="iconsHelp" class="fixed top-0 right-0 h-full w-full sm:w-[720px] bg-slate-900 shadow-2xl
+                         translate-x-full transition-transform z-50 flex flex-col">
+  <div class="p-4 flex items-center justify-between border-b border-white/10 sticky top-0 bg-slate-900 z-10">
+    <h2 class="text-lg font-semibold">Aide — Icônes & actions</h2>
+    <button id="iconsHelpClose" class="px-2 py-1 rounded bg-slate-700">Fermer</button>
+  </div>
+  <div class="p-5 overflow-y-auto text-sm leading-6 space-y-6">
+    <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
+      <p class="opacity-80">
+        Chaque icône affiche un état (digital/analog/custom) et peut lancer une
+        action au clic (<span class="font-medium">Aller vers</span>, <span class="font-medium">Basculer relais IPX</span>,
+        <span class="font-medium">Appeler URL</span>).
+      </p>
+    </div>
+    <div>
+      <h3 class="font-semibold mb-2">Durée & compte à rebours</h3>
+      <p class="opacity-90">
+        Définissez <em>Durée (sec)</em> pour <code>ipx_toggle</code> ou <code>call_url</code> pour afficher un compte à rebours
+        et effectuer une annulation automatique à l’expiration.
+      </p>
+    </div>
+    <div>
+      <h3 class="font-semibold mb-2">Icônes</h3>
+      <p class="opacity-90">Emoji, <code>lucide:&lt;nom&gt;</code>, ou image dans <code>/static/icons/</code>.
+         Le bouton “Librairie…” ouvre le gestionnaire d’images.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Lucide picker -->
+<div id="iconPicker" class="fixed inset-0 bg-black/50 hidden z-40">
+  <div class="absolute inset-0 flex items-center justify-center p-4">
+    <div class="w-full max-w-3xl bg-slate-900 rounded-xl p-4 border border-slate-700 shadow-2xl">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-semibold">Icônes Lucide</div>
+        <button id="iconPickerClose" class="px-2 py-1 rounded bg-slate-700">Fermer</button>
+      </div>
+      <input id="iconSearch" class="w-full bg-slate-900 rounded px-3 py-2 border border-slate-700 mb-3"
+             placeholder="Rechercher (ex: light, thermo, door)…">
+      <div id="iconGrid" class="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 max-h-[60vh] overflow-auto"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .row-card{ border:1px solid #334155; background:rgba(30,41,59,.60); border-radius:.75rem; padding:1rem; }
+  .section-title{ font-size:.8rem; font-weight:600; opacity:.8; margin-bottom:.35rem; }
+  .soft{ border:1px solid #334155; background:rgba(15,23,42,.35); border-radius:.65rem; padding:.6rem .7rem; }
+  .grid-action{ display:grid; gap:.5rem; grid-template-columns: 1fr; }
+  .grid-source{ display:grid; gap:.5rem; grid-template-columns: 1fr 1fr; }
+  @media (min-width: 640px){
+    .grid-action{ grid-template-columns: 200px 1fr 140px 120px; }
+    .grid-source{ grid-template-columns: 220px 120px 1fr 120px; }
+  }
+  .icon-preview{ width:34px; height:34px; border-radius:.5rem; border:1px solid #334155;
+                 display:flex; align-items:center; justify-content:center; background:rgba(15,23,42,.5); }
+  .icon-preview img{ max-width:100%; max-height:100%; border-radius:.5rem; display:block; }
+  #iconGrid .icon-tile{ padding:.5rem; border:1px solid #334155; border-radius:.75rem; background:rgba(30,41,59,.5); }
+  #iconGrid .icon-tile:hover{ background:rgba(30,41,59,.75); }
+  #iconGrid .icon-name{ font-size:.75rem; opacity:.8; }
+</style>
+
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+
+<script>
+(function(){
+  const $list = document.getElementById('list');
+  const $msg  = document.getElementById('msg');
+
+  // ── Help panel
+  const helpBtn  = document.getElementById('btnHelp');
+  const helpMask = document.getElementById('iconsHelpMask');
+  const helpPane = document.getElementById('iconsHelp');
+  const helpClose= document.getElementById('iconsHelpClose');
+  const openHelp = ()=>{ helpMask.classList.remove('hidden'); helpPane.classList.remove('translate-x-full'); };
+  const closeHelp= ()=>{ helpMask.classList.add('hidden');   helpPane.classList.add('translate-x-full');   };
+  helpBtn.addEventListener('click', openHelp);
+  helpClose.addEventListener('click', closeHelp);
+  helpMask.addEventListener('click', e=>{ if(e.target===helpMask) closeHelp(); });
+
+  const showMsg = (t)=>{ $msg.textContent=t; $msg.classList.remove('hidden'); setTimeout(()=> $msg.classList.add('hidden'), 2500); };
+
+  // Track which input to fill from pickers
+  let currentIconInput = null;
+
+  // ── Small helpers
+  function renderIconPreview(previewEl, val){
+    if (!previewEl) return;
+    previewEl.innerHTML = '';
+    if (!val) { previewEl.textContent=''; return; }
+
+    if (val.startsWith('lucide:')){
+      const name = val.slice(7);
+      const i = document.createElement('i');
+      i.setAttribute('data-lucide', name);
+      previewEl.appendChild(i);
+      if (window.lucide && lucide.createIcons && lucide.icons && lucide.icons[name]) {
+        lucide.createIcons({ attrs:{ width:20, height:20 }, icons:{ [name]: lucide.icons[name] } });
+      } else {
+        previewEl.textContent = 'ⓘ';
+      }
+    } else if (/^\/|^https?:\/\//.test(val)) {
+      const img = new Image();
+      img.src = val;
+      img.alt = '';
+      previewEl.appendChild(img);
+    } else {
+      previewEl.textContent = val; // emoji / single char
+    }
+  }
+
+  // ── Row template (multi-line, grouped)
+  function rowTpl(it){
+    const d = document.createElement('div');
+    d.className = 'row-card';
+    d.setAttribute('data-id', it.id || '');
+    d.innerHTML = `
+      <!-- Line 1: activation + label + delete -->
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="soft flex items-center gap-2">
+          <input class="i-enabled" type="checkbox" ${it.enabled ? 'checked' : ''}>
+          <span class="text-sm opacity-80">Actif</span>
+        </label>
+        <div class="flex-1 min-w-[220px]">
+          <div class="section-title">Label</div>
+          <input class="i-label w-full bg-slate-900 rounded px-3 py-2 border border-slate-700" value="${(it.label||'')}">
+        </div>
+        <div class="flex-0">
+          <button class="i-delete px-3 py-2 rounded bg-red-700/80">Supprimer</button>
+        </div>
+      </div>
+
+      <!-- Line 2: Icon -->
+      <div class="mt-3">
+        <div class="section-title">Icône</div>
+        <div class="soft grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] items-center gap-2">
+          <input class="i-icon w-full bg-slate-900 rounded px-3 py-2 border border-slate-700"
+                 value="${(it.icon||'🔘')}" placeholder="🔥, lucide:thermometer, /static/icons/xxx.png">
+          <div class="icon-preview i-preview"></div>
+          <button type="button" class="i-pick-lucide px-3 py-2 rounded bg-slate-700">Lucide…</button>
+          <button type="button" class="i-pick-lib px-3 py-2 rounded bg-slate-700">Librairie…</button>
+        </div>
+      </div>
+
+      <!-- Line 3: Source -->
+      <div class="mt-3">
+        <div class="section-title">Source</div>
+        <div class="soft grid-source">
+          <select class="i-src-type bg-slate-900 rounded px-2 py-2">
+            <option value="digital"    ${it.source?.type==='digital'?'selected':''}>Digital</option>
+            <option value="analog"     ${it.source?.type==='analog'?'selected':''}>Analog</option>
+            <option value="ipx_output" ${it.source?.type==='ipx_output'?'selected':''}>IPX output</option>
+            <option value="custom"     ${it.source?.type==='custom'?'selected':''}>Custom</option>
+          </select>
+          <input class="i-src-index bg-slate-900 rounded px-2 py-2 border border-slate-700" type="number" value="${(it.source?.index??0)}" title="Index (B/A)">
+          <input class="i-src-unit bg-slate-900 rounded px-2 py-2 border border-slate-700" placeholder="unit" value="${(it.source?.unit||'')}" ${it.source?.type==='analog'?'':'disabled'}>
+          <input class="i-src-dec bg-slate-900 rounded px-2 py-2 border border-slate-700" type="number" min="0" value="${(it.source?.decimals??0)}" ${it.source?.type==='analog'?'':'disabled'}>
+        </div>
+      </div>
+
+      <!-- Line 4: Action -->
+      <div class="mt-3">
+        <div class="section-title">Action</div>
+        <div class="soft grid-action items-center">
+          <select class="i-act-type bg-slate-900 rounded px-2 py-2">
+            <option value="none"       ${it.action?.type==='none'?'selected':''}>Aucune</option>
+            <option value="navigate"   ${it.action?.type==='navigate'?'selected':''}>Aller vers</option>
+            <option value="ipx_toggle" ${it.action?.type==='ipx_toggle'?'selected':''}>Basculer relais IPX</option>
+            <option value="call_url"   ${it.action?.type==='call_url'?'selected':''}>Appeler URL</option>
+          </select>
+
+          <input class="i-act-url bg-slate-900 rounded px-2 py-2 border border-slate-700"
+                 placeholder="/chemin"
+                 value="${(it.action?.url||'')}"
+                 ${it.action?.type==='navigate'||it.action?.type==='call_url'?'':'disabled'}>
+
+          <input class="i-act-relay bg-slate-900 rounded px-2 py-2 border border-slate-700"
+                 type="number" min="1" placeholder="Relais"
+                 value="${(it.action?.relay??'')}"
+                 ${it.action?.type==='ipx_toggle'?'':'disabled'}>
+
+          <div class="flex gap-2 items-center">
+            <input class="i-act-duration w-28 bg-slate-900 rounded px-2 py-2 border border-slate-700"
+                   type="number" min="1" placeholder="Durée (sec)"
+                   value="${(it.action?.duration_sec ?? '')}"
+                   ${it.action?.type==='ipx_toggle'||it.action?.type==='call_url'?'':'disabled'}>
+            <select class="i-act-method bg-slate-900 rounded px-2 py-2"
+                    ${it.action?.type==='call_url'?'':'disabled'}>
+              <option value="POST" ${it.action?.method==='POST'?'selected':''}>POST</option>
+              <option value="GET"  ${it.action?.method==='GET'?'selected':''}>GET</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Line 5: Colors -->
+      <div class="mt-3">
+        <div class="section-title">Couleurs</div>
+        <div class="soft flex flex-wrap gap-3 items-center">
+          <div class="flex items-center gap-2">
+            <span class="text-xs opacity-70">ON</span>
+            <input class="i-on swatch rounded border border-slate-700" type="color" value="${(it.appearance?.on||'#10b981')}">
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs opacity-70">OFF</span>
+            <input class="i-off swatch rounded border border-slate-700" type="color" value="${(it.appearance?.off||'#334155')}">
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Enable/disable analog details
+    const sel   = d.querySelector('.i-src-type');
+    const unit  = d.querySelector('.i-src-unit');
+    const dec   = d.querySelector('.i-src-dec');
+    sel.addEventListener('change', () => {
+      const ana = sel.value === 'analog';
+      unit.disabled = !ana; dec.disabled = !ana;
+    });
+
+    // Action toggles
+    const actSel = d.querySelector('.i-act-type');
+    const actUrl = d.querySelector('.i-act-url');
+    const actRel = d.querySelector('.i-act-relay');
+    const actMet = d.querySelector('.i-act-method');
+    const actDur = d.querySelector('.i-act-duration');
+    actSel.addEventListener('change', () => {
+      const t = actSel.value;
+      actUrl.disabled = !(t==='navigate' || t==='call_url');
+      actMet.disabled = !(t==='call_url');
+      actRel.disabled = !(t==='ipx_toggle');
+      actDur.disabled = !(t==='ipx_toggle' || t==='call_url');
+    });
+
+    // Row pickers + preview
+    const iconInput = d.querySelector('.i-icon');
+    const preview   = d.querySelector('.i-preview');
+    renderIconPreview(preview, iconInput.value);
+    iconInput.addEventListener('input', ()=> renderIconPreview(preview, iconInput.value));
+
+    d.querySelector('.i-pick-lucide').addEventListener('click', () => {
+      currentIconInput = iconInput; openLucidePicker();
+    });
+    d.querySelector('.i-pick-lib').addEventListener('click', () => {
+      currentIconInput = iconInput; openIconLibrary();
+    });
+
+    d.querySelector('.i-delete').addEventListener('click', () => d.remove());
+    return d;
+  }
+
+  // ── Collect / Load
+  function collect(){
+    return Array.from($list.querySelectorAll('.row-card')).map(r => {
+      const t = r.querySelector('.i-act-type').value;
+      const durRaw = r.querySelector('.i-act-duration').value;
+      const duration_sec = durRaw ? Math.max(1, parseInt(durRaw, 10)) : null;
+
+      let action;
+      if (t === 'navigate') {
+        action = { type: t, url: r.querySelector('.i-act-url').value || '/' };
+      } else if (t === 'ipx_toggle') {
+        action = {
+          type: t,
+          relay: parseInt(r.querySelector('.i-act-relay').value || '1', 10),
+          ...(duration_sec ? { duration_sec } : {})
+        };
+      } else if (t === 'call_url') {
+        action = {
+          type: t,
+          url: r.querySelector('.i-act-url').value || '/',
+          method: (r.querySelector('.i-act-method').value || 'POST').toUpperCase(),
+          ...(duration_sec ? { duration_sec } : {})
+        };
+      } else {
+        action = { type: 'none' };
+      }
+
+      return {
+        id: r.getAttribute('data-id') || null,
+        enabled: r.querySelector('.i-enabled').checked,
+        label: r.querySelector('.i-label').value,
+        icon: r.querySelector('.i-icon').value || '🔘',
+        source: {
+          type: r.querySelector('.i-src-type').value,
+          index: parseInt(r.querySelector('.i-src-index').value||'0',10),
+          unit: r.querySelector('.i-src-unit').value || null,
+          decimals: parseInt(r.querySelector('.i-src-dec').value||'0',10),
+        },
+        appearance: {
+          on: r.querySelector('.i-on').value,
+          off: r.querySelector('.i-off').value,
+        },
+        action
+      };
+    });
+  }
+
+  function load(){
+    fetch('/status/icons/config',{cache:'no-store'})
+      .then(r=>r.ok?r.json():{icons:[]})
+      .then(j=>{
+        $list.innerHTML = '';
+        const arr = j.icons && Array.isArray(j.icons) ? j.icons : [];
+        if (!arr.length) {
+          $list.appendChild(rowTpl({
+            id:'', enabled:true, label:'Lumière', icon:'lucide:lightbulb',
+            source:{type:'digital', index:0},
+            appearance:{on:'#10b981', off:'#334155'},
+            action:{type:'none'}
+          }));
+        } else {
+          arr.forEach(it => $list.appendChild(rowTpl(it)));
+        }
+      })
+      .catch(e=> showMsg('Erreur chargement config: '+(e.message||e)));
+  }
+
+  document.getElementById('btnAdd').addEventListener('click', () => {
+    $list.appendChild(rowTpl({
+      id:'', enabled:true, label:'', icon:'🔘',
+      source:{type:'digital', index:0},
+      appearance:{on:'#10b981', off:'#334155'},
+      action:{type:'none'}
+    }));
+  });
+
+  document.getElementById('btnSave').addEventListener('click', () => {
+    const icons = collect();
+    fetch('/status/icons/config', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({icons})
+    })
+    .then(r=>r.json())
+    .then(()=> showMsg('Enregistré.'))
+    .catch(e=> showMsg('Erreur: '+(e.message||e)));
+  });
+
+  // ── Lucide picker
+  const picker   = document.getElementById('iconPicker');
+  const grid     = document.getElementById('iconGrid');
+  const search   = document.getElementById('iconSearch');
+  const quick    = document.getElementById('iconInput');
+  const openBtn  = document.getElementById('pickIconBtn');
+  const libBtn   = document.getElementById('pickLibBtn');
+  const pickerOverlay = document.getElementById('iconPicker');
+
+  function targetIconInput(){
+    if (currentIconInput && document.body.contains(currentIconInput)) return currentIconInput;
+    const ae = document.activeElement;
+    if (ae && ae.classList && ae.classList.contains('i-icon')) return ae;
+    return quick;
+  }
+  function openLucidePicker(){
+    picker.classList.remove('hidden'); search.value=''; startRender(''); search.focus();
+  }
+  function openIconLibrary(){
+    window.open('/status/icons/icon_library/ui?pick=1','iconlib','width=980,height=700');
+  }
+  window.addEventListener('message', (ev)=>{
+    if (ev.origin !== location.origin) return;
+    const d = ev.data || {};
+    if (d.type === 'icon-picked' && typeof d.url === 'string'){
+      const input = targetIconInput();
+      if (input){
+        input.value = d.url;
+        input.dispatchEvent(new Event('input', { bubbles:true }));
+      }
+      currentIconInput = null;
+    }
+  });
+  document.getElementById('iconPickerClose').addEventListener('click', ()=> picker.classList.add('hidden'));
+  pickerOverlay.addEventListener('click', (e)=>{ if (e.target === pickerOverlay) picker.classList.add('hidden'); });
+
+  // Lucide grid (virtualized-ish)
+  let iconSize = 36, CHUNK = 200, currentList=[], renderIndex=0, rendering=false, observer=null;
+  function allNames(){ return (window.lucide && lucide.icons) ? Object.keys(lucide.icons) : []; }
+  function clearObserver(){ if(observer){ observer.disconnect(); observer=null; } }
+  function renderChunk(){
+    if (renderIndex >= currentList.length){ rendering=false; return; }
+    const frag = document.createDocumentFragment();
+    const end = Math.min(renderIndex+CHUNK, currentList.length);
+    for (let i=renderIndex;i<end;i++){
+      const name = currentList[i];
+      const btn = document.createElement('button');
+      btn.type='button';
+      btn.className='icon-tile flex flex-col items-center gap-1';
+      btn.innerHTML = `<div><i data-lucide="${name}"></i></div><div class="icon-name truncate w-full text-center">${name}</div>`;
+      btn.addEventListener('click', ()=>{
+        const input = targetIconInput();
+        if (input) input.value = 'lucide:'+name;
+        input && input.dispatchEvent(new Event('input', { bubbles:true }));
+        picker.classList.add('hidden');
+        currentIconInput = null;
+      });
+      frag.appendChild(btn);
+    }
+    grid.appendChild(frag);
+    if (window.lucide && lucide.createIcons) {
+      lucide.createIcons({ attrs: { width: iconSize, height: iconSize } });
+    }
+    renderIndex = end;
+    if (renderIndex < currentList.length) requestAnimationFrame(renderChunk); else rendering=false;
+  }
+  function startRender(filter){
+    clearObserver(); grid.innerHTML='';
+    const names = allNames();
+    const needle = (filter||'').toLowerCase().trim();
+    currentList = needle ? names.filter(n=>n.includes(needle)) : names.slice();
+    renderIndex=0; rendering=true; renderChunk();
+    observer = new IntersectionObserver((entries)=>{
+      for (const e of entries){
+        if (e.isIntersecting && !rendering && renderIndex < currentList.length){
+          rendering=true; requestAnimationFrame(renderChunk);
+        }
+      }
+    }, { root:grid, rootMargin:'200px' });
+    const sentinel = document.createElement('div'); sentinel.style.height='1px';
+    grid.appendChild(sentinel); observer.observe(sentinel);
+  }
+  openBtn.addEventListener('click', ()=>{ currentIconInput = quick; openLucidePicker(); });
+  libBtn.addEventListener('click',  ()=>{ currentIconInput = quick; openIconLibrary(); });
+  search.addEventListener('input', ()=> startRender(search.value));
+
+  // boot
+  function loadInitial(){ load(); }
+  if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', loadInitial, {once:true}); }
+  else { loadInitial(); }
+})();
+</script>
+{% endblock %}

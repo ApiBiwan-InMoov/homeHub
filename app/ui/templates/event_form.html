@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Évènement · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto p-4">
+  <h1 id="modeTitle" class="text-2xl font-bold mb-4">Nouvel évènement</h1>
+
+  <div id="flashErr" class="hidden rounded-lg border border-amber-600 bg-amber-600/10 p-3 text-sm whitespace-pre-wrap mb-4"></div>
+  <div id="flashOk"  class="hidden rounded-lg border border-emerald-700 bg-emerald-700/10 p-3 text-sm whitespace-pre-wrap mb-4"></div>
+
+  <!-- bootstrap values from Jinja, no conflicts inside JS -->
+  <div id="boot"
+       data-mode="{{ mode|default('new') }}"
+       data-event-id="{{ eventId|default('') }}"
+       data-calendar-id="{{ calendarId|default('') }}"></div>
+
+  <form id="f" class="space-y-4">
+    <div>
+      <label class="block text-sm opacity-80 mb-1">Calendrier</label>
+      <select id="calendarId" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"></select>
+    </div>
+
+    <div>
+      <label class="block text-sm opacity-80 mb-1">Titre</label>
+      <input id="summary" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" placeholder="Titre de l’évènement">
+    </div>
+
+    <div>
+      <label class="inline-flex items-center gap-2">
+        <input type="checkbox" id="allDay">
+        <span class="text-sm opacity-80">Journée entière</span>
+      </label>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm opacity-80 mb-1">Début</label>
+        <input id="startDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 mb-2">
+        <input id="startTime" type="time" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm opacity-80 mb-1">Fin</label>
+        <input id="endDate" type="date" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 mb-2">
+        <input id="endTime" type="time" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm opacity-80 mb-1">Lieu</label>
+      <input id="location" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2" placeholder="Adresse ou info lieu">
+    </div>
+
+    <div>
+      <label class="block text-sm opacity-80 mb-1">Description</label>
+      <textarea id="description" rows="4" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"></textarea>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button id="btnSave" class="px-4 py-2 rounded bg-indigo-600">Enregistrer</button>
+      <a href="/calendar/ui" class="px-4 py-2 rounded bg-slate-700">Annuler</a>
+      <button id="btnDelete" type="button" class="ml-auto px-4 py-2 rounded bg-red-600 hidden">Supprimer</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  // flash helpers
+  var $e = document.getElementById('flashErr');
+  var $o = document.getElementById('flashOk');
+  function showErr(msg){ $e.textContent = String(msg); $e.classList.remove('hidden'); }
+  function showOk(msg){ $o.textContent = String(msg); $o.classList.remove('hidden'); setTimeout(function(){ $o.classList.add('hidden'); }, 1800); }
+  function clearFlash(){ $e.classList.add('hidden'); $o.classList.add('hidden'); }
+
+  // bootstrap values
+  var boot = document.getElementById('boot');
+  var mode = boot.getAttribute('data-mode') || 'new';
+  var existingEventId = boot.getAttribute('data-event-id') || '';
+  var existingCalendarId = boot.getAttribute('data-calendar-id') || '';
+
+  // dom refs
+  var $modeTitle  = document.getElementById('modeTitle');
+  var $calendarId = document.getElementById('calendarId');
+  var $summary    = document.getElementById('summary');
+  var $allDay     = document.getElementById('allDay');
+  var $startDate  = document.getElementById('startDate');
+  var $startTime  = document.getElementById('startTime');
+  var $endDate    = document.getElementById('endDate');
+  var $endTime    = document.getElementById('endTime');
+  var $location   = document.getElementById('location');
+  var $description= document.getElementById('description');
+  var $btnSave    = document.getElementById('btnSave');
+  var $btnDelete  = document.getElementById('btnDelete');
+
+  // tiny utils
+  function pad2(n){ return String(n).padStart(2, '0'); }
+  function toLocalDateInput(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  function toLocalTimeInput(d){ return pad2(d.getHours())+':'+pad2(d.getMinutes()); }
+  function addDays(dateStr, n){ var d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return toLocalDateInput(d); }
+  function toISOFromLocal(dateStr, timeStr){ if(!dateStr) return null; return dateStr+'T'+(timeStr? (timeStr.length===5? timeStr+':00': timeStr) : '00:00:00'); }
+
+  // http helpers
+  function fetchJson(url){ return fetch(url).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+r.statusText+' @ '+url+'\n'+t); }); return r.json(); }); }
+  function postJson(url, body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+r.statusText+' @ '+url+'\n'+t); }); return r.json(); }); }
+  function putJson(url, body){ return fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+r.statusText+' @ '+url+'\n'+t); }); return r.json(); }); }
+  function del(url){ return fetch(url,{method:'DELETE'}).then(function(r){ if(!r.ok) return r.text().then(function(t){ throw new Error('HTTP '+r.status+' '+r.statusText+' @ '+url+'\n'+t); }); return r.json(); }); }
+
+  // calendars for selector
+  function loadCalendars(){
+    return fetchJson('/calendar/writable').then(function(j){
+      var list = j.calendars || [];
+      $calendarId.innerHTML = '';
+      list.forEach(function(c){
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.summary || c.id;
+        $calendarId.appendChild(opt);
+      });
+      if (existingCalendarId) $calendarId.value = existingCalendarId;
+    });
+  }
+
+  // form behavior
+  function applyAllDayUI(){
+    var ad = $allDay.checked;
+    $startTime.disabled = ad;
+    $endTime.disabled   = ad;
+    if (ad && $startDate.value && (!$endDate.value || $endDate.value === $startDate.value)){
+      // Google all-day uses exclusive end date
+      $endDate.value = addDays($startDate.value, 1);
+    }
+  }
+  $allDay.addEventListener('change', applyAllDayUI);
+  $startDate.addEventListener('change', applyAllDayUI);
+
+  function defaultDates(){
+    var now = new Date(), in1h = new Date(now.getTime()+60*60*1000);
+    $startDate.value = toLocalDateInput(now);
+    $startTime.value = toLocalTimeInput(now);
+    $endDate.value   = toLocalDateInput(in1h);
+    $endTime.value   = toLocalTimeInput(in1h);
+  }
+
+  function loadExistingIfNeeded(){
+    if (mode !== 'edit') return Promise.resolve();
+    $modeTitle.textContent = 'Modifier l’évènement';
+    $btnDelete.classList.remove('hidden');
+
+    if (!existingEventId || !existingCalendarId){
+      showErr('Paramètres manquants pour modifier (eventId/calendarId).');
+      return Promise.resolve();
+    }
+    return fetchJson('/calendar/events/'+encodeURIComponent(existingEventId)+'?calendarId='+encodeURIComponent(existingCalendarId))
+      .then(function(ev){
+        var s = ev.start || {}, e = ev.end || {};
+        var startISO = s.dateTime || (s.date ? s.date+'T00:00:00' : null);
+        var endISO   = e.dateTime || (e.date ? e.date+'T00:00:00' : null);
+        var allDay = !!s.date && !s.dateTime;
+
+        $calendarId.value = ev.calendarId || existingCalendarId;
+        $summary.value    = ev.summary || ev.title || '';
+        $location.value   = (typeof ev.location === 'string' ? ev.location : '') || '';
+        $description.value= ev.description || '';
+
+        if (startISO){ var sd=new Date(startISO); $startDate.value=toLocalDateInput(sd); $startTime.value=toLocalTimeInput(sd); }
+        if (endISO){   var ed=new Date(endISO);   $endDate.value  =toLocalDateInput(ed); $endTime.value  =toLocalTimeInput(ed); }
+
+        $allDay.checked = allDay;
+        applyAllDayUI();
+      })
+      .catch(function(e){ showErr(e.message||String(e)); });
+  }
+
+  function buildPayload(){
+    var cid  = $calendarId.value;
+    var name = ($summary.value||'').trim();
+    var loc  = ($location.value||'').trim();
+    var desc = $description.value||'';
+
+    var body = { calendarId: cid, summary: name };
+    if (loc)  body.location = loc;
+    if (desc) body.description = desc;
+
+    if ($allDay.checked){
+      if (!$startDate.value) throw new Error('Date de début requise.');
+      var endD = $endDate.value || addDays($startDate.value, 1);
+      body.start = { date: $startDate.value };
+      body.end   = { date: endD }; // exclusive
+    } else {
+      if (!$startDate.value || !$startTime.value || !$endDate.value || !$endTime.value){
+        throw new Error('Début et fin (date/heure) requis.');
+      }
+      body.start = { dateTime: toISOFromLocal($startDate.value, $startTime.value) };
+      body.end   = { dateTime: toISOFromLocal($endDate.value,   $endTime.value)   };
+    }
+    return body;
+  }
+
+  // actions
+  document.getElementById('btnSave').addEventListener('click', function(ev){
+    ev.preventDefault(); clearFlash();
+    var body;
+    try { body = buildPayload(); }
+    catch(e){ showErr(e.message||String(e)); return; }
+
+    var p = (mode === 'edit' && existingEventId)
+      ? putJson('/calendar/events/'+encodeURIComponent(existingEventId), body)
+      : postJson('/calendar/events', body);
+
+    p.then(function(){ showOk('Évènement enregistré.'); setTimeout(function(){ window.location.href='/calendar/ui'; }, 400); })
+     .catch(function(e){ showErr(e.message||String(e)); });
+  });
+
+  document.getElementById('btnDelete').addEventListener('click', function(){
+    if (mode !== 'edit' || !existingEventId || !existingCalendarId) return;
+    if (!confirm('Supprimer cet évènement ?')) return;
+    del('/calendar/events/'+encodeURIComponent(existingEventId)+'?calendarId='+encodeURIComponent(existingCalendarId))
+      .then(function(){ showOk('Supprimé.'); setTimeout(function(){ window.location.href='/calendar/ui'; }, 300); })
+      .catch(function(e){ showErr(e.message||String(e)); });
+  });
+
+  // boot
+  $modeTitle.textContent = (mode === 'edit') ? 'Modifier l’évènement' : 'Nouvel évènement';
+  loadCalendars()
+    .then(function(){ if (mode === 'new') defaultDates(); })
+    .then(loadExistingIfNeeded)
+    .catch(function(e){ showErr(e.message||String(e)); });
+})();
+</script>
+{% endblock %}

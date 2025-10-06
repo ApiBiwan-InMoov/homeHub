@@ -1,4 +1,3 @@
-cat > .gitignore <<'GI'
 __pycache__/
 *.py[cod]
 *.pyo
@@ -23,5 +22,3 @@ secrets/
 Thumbs.db
 
 node_modules/
-GI
-
