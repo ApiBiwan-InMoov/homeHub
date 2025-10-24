@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+fimport json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -10,7 +11,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from zoneinfo import ZoneInfo
-
+from pathlib import Path
 from .config import settings
 from .deps import get_calendar
 from .storage.calendar_prefs import (
@@ -25,19 +26,33 @@ from .utils.datetime import parse_iso_naive
 
 # ---- travel helpers (already cached inside router_travel) --------------------
 try:
+    from fastapi import APIRouter, Request, HTTPException
+    from fastapi.responses import HTMLResponse, RedirectResponse
     from .router_travel import _geocode as _rt_geocode
     from .router_travel import _home_coords as _rt_home_coords
     from .router_travel import _osrm_minutes as _rt_osrm_minutes
+
 except Exception:
     _rt_geocode = None
     _rt_osrm_minutes = None
     _rt_home_coords = None
+
+try:
+    from google_auth_oauthlib.flow import Flow
+    from google.oauth2.credentials import Credentials
+except Exception:
+    Flow = None
+    Credentials = None
 
 # extra calendar-level cache (origin, dest) -> (minutes, ts)
 _COMMUTE_CACHE: dict[tuple[float, float, float, float], tuple[int | None, float]] = {}
 _COMMUTE_TTL = 60 * 60  # 1 hour
 
 log = logging.getLogger("uvicorn.error")
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+DATA_DIR = Path("app/data")
+CREDS_PATH = Path("secrets/client_secret.json")   # <- consistent with your setup
+TOKEN_PATH = DATA_DIR / "google_token.json"
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 templates = Jinja2Templates(directory="app/ui/templates")
@@ -46,6 +61,17 @@ templates = Jinja2Templates(directory="app/ui/templates")
 # -----------------------------------------------------------------------------
 # utils
 # -----------------------------------------------------------------------------
+def _client_config() -> dict:
+    """
+    Load the Google OAuth client config for an Installed App.
+    Expecting: secrets/client_secret.json (downloaded from Google Cloud console).
+    """
+    p = Path("secrets/client_secret.json")
+    if not p.exists():
+        # Make the error clear in logs/HTTP response
+        raise RuntimeError("secrets/client_secret.json is missing")
+    return json.loads(p.read_text(encoding="utf-8"))
+
 def _iso_with_tz(s: str | None, tz_name: str) -> str | None:
     """Return RFC3339 string with tz. Accepts '...Z', '...+01:00', or naive."""
     if not s:
@@ -333,6 +359,8 @@ def list_events(
     time_min: str | None = Query(None, description="ISO start (inclusive)"),
     time_max: str | None = Query(None, description="ISO end (exclusive)"),
     include_commute: bool = Query(False, description="Attach 'drive_minutes' when possible"),
+    travel: bool | None = Query(None, description="Alias of include_commute; attaches trip/drive minutes"),
+
     strict_window: bool = Query(
         False, description="If True, skip calendars that can't window; if False, fallback to client-side filtering"
     ),
@@ -435,17 +463,27 @@ def list_events(
 
         items.sort(key=_key)
 
+
         # Optional commute enrichment
-        if include_commute and (_rt_geocode and _rt_osrm_minutes and _rt_home_coords):
+        # Accept both ?include_commute=1 and ?travel=1 (the latter is sent by the Home UI)
+        want_travel = bool(include_commute) or bool(travel)
+        if want_travel and (_rt_geocode and _rt_osrm_minutes and _rt_home_coords):
             for ev in items:
                 try:
-                    if ev.get("drive_minutes") is not None:
+                    # Skip if already present
+                    if ev.get("drive_minutes") is not None or ev.get("trip_minutes") is not None:
                         continue
                     loc = _extract_location_text(ev)
-                    ev["drive_minutes"] = _commute_minutes_for_location(loc) if loc else None
+                    mins = _commute_minutes_for_location(loc) if loc else None
+                    # Provide both keys for client compatibility
+                    ev["drive_minutes"] = mins
+                    ev["trip_minutes"] = mins
                 except Exception as e:
                     ev["drive_minutes"] = None
+                    ev["trip_minutes"] = None
                     log.warning("Commute enrichment failed: %s", getattr(e, "detail", str(e)))
+
+
 
         return {"items": items, "errors": errors, "window": {"time_min": time_min, "time_max": time_max}}
 
@@ -575,3 +613,38 @@ def delete_event(event_id: str, calendarId: str, cal=Depends(get_calendar)):
         return cal.delete_event(calendar_id=calendarId, event_id=event_id)
     except Exception as e:
         raise HTTPException(500, f"delete_event failed: {e}")
+
+
+@router.get("/oauth/start", response_class=HTMLResponse)
+async def calendar_oauth_start(request: Request):
+    try:
+        base = str(request.base_url).rstrip("/")
+        redirect_uri = f"{base}/calendar/oauth/callback"
+        flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=redirect_uri)
+        auth_url, state = flow.authorization_url(
+            access_type="offline", include_granted_scopes="true", prompt="consent"
+        )
+        # stash state in server session-alt: signed cookie; for brevity store on disk
+        (DATA_DIR / "oauth_state.txt").write_text(state, encoding="utf-8")
+        return RedirectResponse(auth_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth start failed: {e}")
+
+@router.get("/oauth/callback", response_class=HTMLResponse)
+async def calendar_oauth_callback(request: Request, state: str | None = None):
+    try:
+        saved = (DATA_DIR / "oauth_state.txt").read_text(encoding="utf-8").strip()
+        if not state or state != saved:
+            raise RuntimeError("State mismatch")
+        base = str(request.base_url).rstrip("/")
+        redirect_uri = f"{base}/calendar/oauth/callback"
+        flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=redirect_uri)
+        flow.fetch_token(authorization_response=str(request.url))
+        creds = flow.credentials
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with TOKEN_PATH.open("w", encoding="utf-8") as f:
+            f.write(creds.to_json())
+        return HTMLResponse("<h3>Google Calendar connected ✅</h3><p>You can close this tab.</p>")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth callback failed: {e}")
+
