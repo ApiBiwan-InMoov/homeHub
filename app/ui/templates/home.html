@@ -1,0 +1,743 @@
+{% extends "base.html" %}
+{% block title %}Home · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto p-4 space-y-8">
+
+  <!-- WEATHER -->
+  <section>
+    <h2 class="text-xl font-semibold mb-3">Météo</h2>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <!-- Today summary -->
+      <div class="rounded-xl p-4 border border-slate-700 bg-slate-800/60 flex items-center gap-4">
+        <div id="wx-today-ico" class="text-4xl">☀️</div>
+        <div>
+          <div class="text-sm opacity-70">Aujourd'hui</div>
+          <div id="wx-summary" class="text-lg font-semibold">—</div>
+          <div id="wx-minmax" class="opacity-80 mt-1">—</div>
+          <div id="wx-extra" class="opacity-70 text-sm mt-1">—</div>
+        </div>
+      </div>
+
+      <!-- Temp + precip chart -->
+      <div class="rounded-xl p-4 border border-slate-700 bg-slate-800/60 lg:col-span-2">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-sm opacity-70">Aujourd'hui · Température & Pluie</div>
+          <div id="wx-range" class="text-xs opacity-60"></div>
+        </div>
+        <div class="w-full">
+          <canvas id="wx-chart" style="width:100%; height:200px;"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hour by hour -->
+    <div class="mt-3">
+      <div class="text-sm opacity-70 mb-2">Heure par heure</div>
+      <div id="wx-hourly" class="flex gap-2 overflow-x-auto pb-2"></div>
+    </div>
+
+    <!-- 7-day -->
+    <div class="mt-4">
+      <div class="text-sm opacity-70 mb-2">Prochains 7 jours</div>
+      <div id="wx-daily" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2"></div>
+    </div>
+  </section>
+
+  <!-- CALENDAR (next 7 days; same layout as calendar page) -->
+  <section>
+    <div class="flex items-center justify-between">
+      <h2 class="text-xl font-semibold">Calendrier (7 jours)</h2>
+      <a href="/calendar/ui" class="px-3 py-1 rounded bg-slate-700">Ouvrir</a>
+    </div>
+    <div id="home-cal" class="space-y-6 mt-3"></div>
+    <div id="home-cal-err" class="text-sm text-amber-400 hidden"></div>
+  </section>
+
+  <!-- STATUS STRIP -->
+  <section>
+    <h2 class="text-xl font-semibold mb-3">Raccourcis</h2>
+    <div id="status-icons" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+    <div id="status-err" class="text-sm text-amber-400 hidden"></div>
+  </section>
+
+</div>
+
+<style>
+.badge{ border:1px solid #334155; border-radius:.75rem; background:rgba(30,41,59,.6); padding:.5rem .75rem; }
+.stat{ min-width:84px; text-align:center; }
+.stat .ico{ font-size:1.25rem; }
+.stat.on{ background:rgba(16,185,129,.2); border-color:#10b981; }
+.stat.off{ background:rgba(71,85,105,.3); }
+.hourchip{ min-width:70px; }
+
+ /* Calendar grid — same as events.html */
+ .cal-grid { display:grid; grid-template-columns:64px 160px 220px 1fr 130px; gap:.75rem; }
+ @media (max-width:1100px){ .cal-grid{ grid-template-columns:56px 140px 180px 1fr 110px; } }
+ @media (max-width:900px){  .cal-grid{ grid-template-columns:56px 140px 1fr; } .cal-hide-md{ display:none; } }
+ @media (max-width:700px){  .cal-grid{ grid-template-columns:56px 1fr; } .cal-hide-sm{ display:none; } }
+
+ .cal-daybox{ width:56px;height:56px;display:flex;align-items:center;justify-content:center;
+              border-radius:.75rem;border:1px solid #334155;background:rgba(30,41,59,.7);
+              font-weight:700;font-size:1.25rem; }
+ .cal-pill,.cal-card,.cal-chip{ border:1px solid #334155;border-radius:.75rem;background:rgba(30,41,59,.6);
+                                padding:.5rem .75rem;display:flex;align-items:center; }
+ .cal-pill{ font-weight:600; }
+ .cal-month{ font-size:1.125rem;font-weight:600;border-bottom:1px solid #334155;padding-bottom:.25rem; }
+ .subtle{ opacity:.75;font-size:.85rem; }
+ .daywrap{ position:relative;width:56px;height:56px; }
+ .cal-badge{ position:absolute;bottom:-6px;right:-6px;font-size:.70rem;line-height:1;padding:3px 6px;
+             border-radius:9999px;background:#0ea5e9;color:white;box-shadow:0 1px 2px rgba(0,0,0,.3); }
+ .cal-ongoing{ border:1px solid #f59e0b;background:rgba(245,158,11,.15);font-weight:700;margin-left:.5rem; }
+ .cal-range{ font-size:.80rem;margin-right:.5rem; }
+
+ /* Status icon cards + countdown ring */
+<style>
+/* ... keep your existing styles ... */
+
+/* --- Status icons card --- */
+.icon-btn{
+  position:relative; display:block; text-align:left;
+  border:1px solid #334155; border-radius:.9rem; background:rgba(30,41,59,.6);
+  padding:.75rem .9rem; transition:background-color .2s,border-color .2s,opacity .2s;
+}
+.icon-btn:hover{ background:rgba(30,41,59,.75); }
+.icon-btn[disabled]{ opacity:.65; pointer-events:none; }
+
+.icon-main{ display:flex; align-items:center; gap:.75rem; min-height:64px; }
+.icon-ico-wrap{
+  position:relative; width:56px; height:56px; flex:0 0 56px; display:grid; place-items:center;
+}
+.icon-ico{ font-size:40px; line-height:1; }
+.icon-ico img{ width:48px; height:48px; object-fit:contain; display:block; }
+
+.icon-ring{
+  position:absolute; inset:0; border-radius:9999px; pointer-events:none;
+  /* ring thickness */
+  --ring-pad: 4px;
+  padding: var(--ring-pad);
+  background:
+    conic-gradient(var(--accent, #10b981) var(--deg, 0deg), transparent var(--deg, 0deg));
+  -webkit-mask:
+    radial-gradient(farthest-side, transparent calc(100% - var(--ring-pad)*2 - 2px),
+                    black calc(100% - var(--ring-pad)*2));
+          mask:
+    radial-gradient(farthest-side, transparent calc(100% - var(--ring-pad)*2 - 2px),
+                    black calc(100% - var(--ring-pad)*2));
+  opacity:.9; display:none;
+}
+.icon-btn.timer .icon-ring{ display:block; }
+
+.icon-meta{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.icon-meta .meta-label{ font-weight:600; }
+.icon-meta .js-display{ opacity:.8; font-size:.82rem; }
+
+/* small time bubble on the icon ring */
+.icon-eta{
+  position:absolute; right:-4px; bottom:-4px;
+  font-size:.70rem; line-height:1; padding:2px 6px;
+  border-radius:9999px; background:#0ea5e9; color:white;
+  box-shadow:0 1px 2px rgba(0,0,0,.3); display:none;
+}
+.icon-btn.timer .icon-eta{ display:block; }
+
+/* busy overlay shown immediately on click */
+.icon-busy{
+  position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(2,6,23,.25); border-radius:inherit;
+}
+.icon-btn.is-busy .icon-busy{ display:flex; }
+.spin{
+  width:22px;height:22px; border:3px solid rgba(148,163,184,.35);
+  border-top-color: var(--accent, #10b981); border-radius:9999px; animation:sp 1s linear infinite;
+}
+@keyframes sp{ to{ transform:rotate(360deg); } }
+</style>
+
+<!-- Lucide (needed to render lucide:* icons here too) -->
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+
+<script>
+(function () {
+  // ---------- small utils ----------
+  const el = (tag, cls, txt) => { const d=document.createElement(tag); if(cls) d.className=cls; if(txt!=null) d.textContent=txt; return d; };
+  const fmtC = x => (x==null) ? '—' : (Math.round(x) + '°');
+  const fmtmm = x => (x==null) ? '—' : (Math.round(x) + ' mm');
+  const fmtHour = iso => new Date(iso).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false});
+  const todayISO = () => new Date().toISOString();
+  const untilISO = days => { const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString(); };
+
+  // ---------- Weather icons ----------
+  function wxIcon(code){
+    code = Number(code);
+    if ([0].includes(code)) return "☀️";
+    if ([1].includes(code)) return "🌤️";
+    if ([2].includes(code)) return "⛅️";
+    if ([3].includes(code)) return "☁️";
+    if ([45,48].includes(code)) return "🌫️";
+    if ([51,53,55].includes(code)) return "🌦️";
+    if ([61,63,65,80,81,82].includes(code)) return "🌧️";
+    if ([71,73,75].includes(code)) return "🌨️";
+    if ([95,96,99].includes(code)) return "⛈️";
+    return "🌡️";
+  }
+
+  // ---------- Countdown manager (for status icons) ----------
+  let _activeTimers = new Map();
+  let _tickRunning = false;
+  const _fmtMMSS = sec => { const m=(sec/60)|0, s=sec%60|0; return `${m}:${String(s).padStart(2,'0')}`; };
+
+  function _ensureTick(){
+    if (_tickRunning) return;
+    _tickRunning = true;
+    requestAnimationFrame(_tick);
+  }
+  function _tick(){
+    const now = Date.now();
+    let any=false;
+    _activeTimers.forEach(st=>{
+      const msLeft = Math.max(0, st.endAt - now);
+      const sec = Math.round(msLeft/1000);
+      if (st.ring){
+        const pct = st.total>0 ? 1 - (msLeft/(st.total*1000)) : 0;
+        const deg = Math.min(360, Math.max(0, pct*360));
+        st.ring.style.setProperty('--deg', deg+'deg');
+      }
+      if (st.eta) st.eta.textContent = _fmtMMSS(Math.max(0, sec));
+      if (sec>0) any=true;
+      else {
+        // timer finished visually — hide until preview says otherwise
+        if (st.btn) st.btn.classList.remove('timer');
+      }
+    });
+    if (any) requestAnimationFrame(_tick); else _tickRunning=false;
+  }
+
+  // Preview drives real timers; we mirror them locally for smooth UI
+  function _updateTimersFromPreview(items){
+  const now  = Date.now();
+  const next = new Map();               // build a brand-new map
+
+  (items || []).forEach(it => {
+    const rem = Number(it?.timer?.remaining_sec);
+    if (!Number.isFinite(rem) || rem <= 0) return;
+
+    const prev  = _activeTimers.get(it.id);
+    const total = (prev && Number.isFinite(prev.total)) ? prev.total : rem; // keep original total if known
+
+    next.set(it.id, {
+      endAt: now + rem * 1000,
+      total,
+      btn: null, wrap: null, ring: null, eta: null
+    });
+  });
+
+  // swap maps atomically to avoid leaking refs across cards
+  _activeTimers.clear();
+  next.forEach((v,k) => _activeTimers.set(k, v));
+
+  if (_activeTimers.size) _ensureTick();
+}
+
+
+  // ===== Rendering =====
+  function renderIcon(el, spec){
+    if (!spec){ el.textContent='🔘'; return; }
+    if (typeof spec === 'string' && spec.startsWith('lucide:')){
+      const name = spec.slice(7);
+      el.innerHTML = `<i data-lucide="${name}"></i>`;
+      if (window.lucide && lucide.icons && lucide.icons[name]){
+        lucide.createIcons({ attrs:{ width:40, height:40 }, icons:{ [name]: lucide.icons[name] } });
+      }
+    } else if (typeof spec === 'string' && /(^\/|^https?:).+\.(png|jpg|jpeg|gif|svg)$/.test(spec)){
+      el.innerHTML = `<img alt="" src="${spec}">`;
+    } else {
+      el.textContent = spec; // emoji/plain
+    }
+  }
+
+  function iconCard(it){
+    const btn = document.createElement('button');
+    btn.className = 'icon-btn';
+    btn.style.setProperty('--accent', it.color || '#10b981');
+
+    btn.innerHTML = `
+      <div class="icon-main">
+        <div class="icon-ico-wrap">
+          <div class="icon-ring"></div>
+          <div class="icon-ico js-ico"></div>
+          <div class="icon-eta js-eta">0:00</div>
+        </div>
+        <div class="icon-meta">
+          <div class="meta-label">${it.label || ''}</div>
+          <div class="js-display">${it.display || ''}</div>
+        </div>
+      </div>
+      <div class="icon-busy"><div class="spin"></div></div>
+    `;
+
+    const wrap = btn.querySelector('.icon-ico-wrap');
+    const ring = btn.querySelector('.icon-ring');
+    const eta  = btn.querySelector('.js-eta');
+    renderIcon(btn.querySelector('.js-ico'), it.icon);
+
+    // Attach to existing timer if any
+    const st = _activeTimers.get(it.id);
+    if (st){
+      st.btn = btn; st.wrap = wrap; st.ring = ring; st.eta = eta;
+      btn.classList.add('timer');
+      const msLeft = Math.max(0, st.endAt - Date.now());
+      const pct = st.total > 0 ? 1 - (msLeft / (st.total * 1000)) : 0;
+      ring.style.setProperty('--deg', `${Math.min(360, Math.max(0, pct * 360))}deg`);
+      eta.textContent = _fmtMMSS(Math.round(msLeft/1000));
+    } else {
+      btn.classList.remove('timer');                 // 👈 ensure non-timer cards are clean
+      ring.style.setProperty('--deg', '0deg');       // reset visual ring
+    }
+    // Click behavior:
+    // 1) If a timer is active → cancel immediately
+    // 2) Else → show immediate busy state while action is sent, then reload
+    btn.addEventListener('click', ()=>{
+      // avoid double click while busy
+      if (btn.classList.contains('is-busy')) return;
+
+      if (_activeTimers.has(it.id)){
+        btn.classList.add('is-busy'); btn.disabled = true;
+        fetch(`/status/icons/action/${encodeURIComponent(it.id)}/cancel`, { method:'POST' })
+          .then(()=> loadIcons())
+          .catch(()=> loadIcons());
+        // failsafe remove busy in case reload is slow
+        setTimeout(()=>{ if (btn.isConnected) { btn.classList.remove('is-busy'); btn.disabled=false; } }, 2500);
+        return;
+      }
+
+      // optimistic busy right away
+      btn.classList.add('is-busy'); btn.disabled = true;
+
+      fetch('/status/icons/action/'+encodeURIComponent(it.id), { method:'POST' })
+        .then(()=> loadIcons())
+        .catch(()=> loadIcons());
+
+      // If this icon usually has a timer, preview will install it.
+      // Busy is kept until loadIcons re-renders; add failsafe just in case.
+      setTimeout(()=>{ if (btn.isConnected) { btn.classList.remove('is-busy'); btn.disabled = false; } }, 2500);
+    });
+
+    return btn;
+  }
+
+  async function loadIcons(){
+    const errEl = document.getElementById('status-err');
+    try{
+      const r = await fetch('/status/icons/preview', { cache:'no-store' });
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+
+      _updateTimersFromPreview(j.items || []);
+
+      const box = document.getElementById('status-icons');
+      box.innerHTML = '';
+      (j.items || []).forEach(it => box.appendChild(iconCard(it)));
+
+      if (window.lucide && lucide.createIcons) {
+        lucide.createIcons({ attrs: { width: 40, height: 40 } });
+      }
+      errEl.classList.add('hidden');
+    }catch(e){
+      errEl.textContent = 'Impossible de charger les raccourcis';
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  // expose for rest of page init
+  window.loadIcons = loadIcons;
+
+
+  // ---------- WEATHER ----------
+  async function loadWeather(){
+    const r = await fetch('/weather/pack',{cache:'no-store'});
+    if(!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  function drawChart(canvas, hours){
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const cssW = canvas.clientWidth;
+    const cssH = Math.max(160, parseInt(getComputedStyle(canvas).height,10) || 200);
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cssW,cssH);
+
+    const M = {l:36, r:10, t:10, b:22};
+    const W = cssW - M.l - M.r;
+    const H = cssH - M.t - M.b;
+    if (hours.length < 2) return;
+
+    const temps = hours.map(h=>Number(h.t));
+    const precs = hours.map(h=>Number(h.p||0));
+    const times = hours.map(h=>new Date(h.time));
+
+    const tmin = Math.min(...temps), tmax = Math.max(...temps);
+    const pmax = Math.max(1, Math.max(...precs));
+    const x = i => M.l + (i*(W/(hours.length-1)));
+    const yTemp = v => M.t + (H - ((v - tmin)/(tmax - tmin || 1))*(H*0.8)) - 4;
+    const barBase = M.t + H, barMaxH = H*0.32;
+
+    // grid + ticks
+    const grid = 'rgba(148,163,184,.2)';
+    const grid2 = 'rgba(148,163,184,.15)';
+    const text = 'rgba(203,213,225,.8)';
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    for (let i=0;i<hours.length;i+=3){ ctx.beginPath(); ctx.moveTo(x(i),M.t); ctx.lineTo(x(i),M.t+H); ctx.stroke(); }
+    const yTicks = [tmin, (tmin+tmax)/2, tmax];
+    ctx.fillStyle = text; ctx.font = '11px ui-sans-serif, system-ui'; ctx.textAlign='right';
+    yTicks.forEach(v=>{ const yy=yTemp(v); ctx.strokeStyle=grid2; ctx.beginPath(); ctx.moveTo(M.l,yy); ctx.lineTo(M.l+W,yy); ctx.stroke(); ctx.fillText(Math.round(v)+'°', M.l-6, yy+3); });
+
+    // precip bars
+    ctx.fillStyle = 'rgba(59,130,246,.45)';
+    const barW = Math.max(2, W/(hours.length*1.35));
+    precs.forEach((p,i)=>{ const h=(p/pmax)*barMaxH; ctx.fillRect(x(i)-barW/2, barBase-h, barW, h); });
+
+    // temp area + line
+    const grad = ctx.createLinearGradient(0,M.t,0,M.t+H); grad.addColorStop(0,'rgba(244,63,94,.25)'); grad.addColorStop(1,'rgba(244,63,94,0)');
+    ctx.beginPath(); ctx.moveTo(x(0), yTemp(temps[0])); for(let i=1;i<hours.length;i++){ ctx.lineTo(x(i), yTemp(temps[i])); }
+    ctx.lineTo(x(hours.length-1), barBase); ctx.lineTo(x(0), barBase); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+    ctx.beginPath(); ctx.lineWidth = 2; ctx.strokeStyle='rgba(244,63,94,.95)';
+    ctx.moveTo(x(0), yTemp(temps[0])); for(let i=1;i<hours.length;i++){ ctx.lineTo(x(i), yTemp(temps[i])); } ctx.stroke();
+    ctx.fillStyle='rgba(244,63,94,.95)'; for(let i=0;i<hours.length;i+=3){ ctx.beginPath(); ctx.arc(x(i), yTemp(temps[i]), 2.5, 0, Math.PI*2); ctx.fill(); }
+    ctx.textAlign='center'; ctx.fillStyle='rgba(203,213,225,.75)'; for(let i=0;i<hours.length;i+=3){ const hh=times[i].toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}); ctx.fillText(hh, x(i), M.t+H+16); }
+  }
+
+  function fillWeather(wx){
+    document.getElementById('wx-today-ico').textContent = wxIcon(wx.today.code);
+    document.getElementById('wx-summary').textContent = (wx.today.summary || 'Météo') + (wx.today.temp_now!=null ? (' · ' + (Math.round(wx.today.temp_now)+'°')) : '');
+    document.getElementById('wx-minmax').textContent = 'Max ' + fmtC(wx.today.tmax) + '  •  Min ' + fmtC(wx.today.tmin);
+    document.getElementById('wx-extra').textContent = 'Précip: ' + fmtmm(wx.today.precip) + (wx.today.wind!=null ? ('  •  Vent ' + Math.round(wx.today.wind) + ' km/h') : '');
+    const start = wx.hourly24[0]?.time, end = wx.hourly24.at(-1)?.time;
+    document.getElementById('wx-range').textContent = (start?start.slice(11,16):'') + ' – ' + (end?end.slice(11,16):'');
+    const canvas = document.getElementById('wx-chart');
+    const redraw = ()=> drawChart(canvas, wx.hourly24);
+    new ResizeObserver(redraw).observe(canvas.parentElement);
+    redraw();
+
+    const hw = document.getElementById('wx-hourly'); hw.innerHTML = '';
+    wx.hourly24.forEach(h=>{
+      const chip = el('div','badge hourchip flex flex-col items-center gap-1');
+      chip.appendChild(el('div','text-xs opacity-70', fmtHour(h.time)));
+      chip.appendChild(el('div','text-xl', wxIcon(h.code!=null ? h.code : (h.p>0 ? 61 : 0))));
+      chip.appendChild(el('div','font-semibold', fmtC(h.t)));
+      chip.appendChild(el('div','text-xs opacity-70', h.p ? (h.p.toFixed(1)+'mm') : '—'));
+      hw.appendChild(chip);
+    });
+
+    const dw = document.getElementById('wx-daily'); dw.innerHTML = '';
+    wx.daily7.forEach(d=>{
+      const box = el('div','badge flex flex-col items-center py-2');
+      box.appendChild(el('div','text-xs opacity-70', new Date(d.date).toLocaleDateString(undefined,{weekday:'short', day:'2-digit', month:'short'})));
+      box.appendChild(el('div','text-2xl', wxIcon(d.code)));
+      box.appendChild(el('div','text-sm', d.label || '—'));
+      box.appendChild(el('div','text-sm font-semibold', fmtC(d.tmax) + ' / ' + fmtC(d.tmin)));
+      box.appendChild(el('div','text-xs opacity-70', d.precip ? (d.precip.toFixed(1)+'mm') : '—'));
+      dw.appendChild(box);
+    });
+  }
+
+  // ---------- CALENDAR ----------
+  const getStart = ev => (ev?.start?.dateTime || ev?.start?.date || null);
+  const getEnd   = ev => (ev?.end?.dateTime   || ev?.end?.date   || null);
+  const isAllDay = ev => !!(ev?.start?.date && !ev?.start?.dateTime);
+  const computeDuration = (start, end, allDay) => {
+    if (allDay) return 'jour entier';
+    if (!start || !end) return '—';
+    const s=new Date(start), e=new Date(end); let m=Math.round((e-s)/60000); if(m<0)m=0;
+    if (m>=60){ const h=Math.floor(m/60), r=m%60; return r ? (h+'h'+String(r).padStart(2,'0')) : (h+'h'); }
+    return m+' min';
+  };
+  const getCalName = ev => (ev.calendarName || ev?.organizer?.displayName || ev?.organizer?.email || ev.calendarId || 'Default');
+
+  function extractLocationText(ev){
+    const val = ev && ev.location;
+    if (typeof val === 'string') return val;
+    if (val && typeof val === 'object'){
+      const ks=['displayName','name','address','formatted','query','title','description'];
+      for (let k of ks){ const v=val[k]; if (typeof v==='string' && v.trim()) return v; }
+      if (val.location && typeof val.location==='object'){
+        for (let k of ks){ const v=val.location[k]; if (typeof v==='string' && v.trim()) return v; }
+      }
+    }
+    if (Array.isArray(val)){
+      for (let it of val){
+        if (typeof it==='string' && it.trim()) return it;
+        if (it && typeof it==='object'){
+          const ks=['displayName','name','address','formatted','query','title','description'];
+          for (let k of ks){ const v=it[k]; if (typeof v==='string' && v.trim()) return v; }
+        }
+      }
+    }
+    return '';
+  }
+
+  const commuteCache = new Map();
+  const inflight = new Map();
+  const pending = [];
+  const MAX_CONCURRENCY = 2;
+  let active = 0;
+
+  const io = new IntersectionObserver(entries=>{
+    entries.forEach(ent=>{
+      if (!ent.isIntersecting) return;
+      const chip = ent.target;
+      const loc = chip.getAttribute('data-location');
+      const at  = chip.getAttribute('data-at');
+      const span = chip.querySelector('.js-commute-val');
+      if (!loc){ span.textContent='—'; return; }
+      const key = (loc.trim()+'|'+String(at||'').trim());
+
+      if (commuteCache.has(key)){
+        const v = commuteCache.get(key);
+        span.textContent = (v!=null ? (v+' min') : '—');
+        return;
+      }
+      if (inflight.has(key)){
+        inflight.get(key).then(()=>{ const v=commuteCache.get(key); if(chip.isConnected) span.textContent=(v!=null? (v+' min'):'—'); });
+        return;
+      }
+      span.textContent = '…';
+      pending.push({el:span,key,loc,at});
+      runQueue();
+    });
+  }, { rootMargin: '200px 0px' });
+
+  function runQueue(){ while (active < MAX_CONCURRENCY && pending.length){ doFetch(pending.shift()); } }
+  function doFetch(job){
+    active += 1;
+    const url = '/calendar/drive-time?to='+encodeURIComponent(job.loc)+'&at='+(job.at?encodeURIComponent(job.at):'');
+    const ctl = new AbortController();
+    const timeout = setTimeout(()=>ctl.abort(), 8000);
+    const p = fetch(url, { signal: ctl.signal })
+      .then(r=> r.ok ? r.json() : null)
+      .then(j=>{
+        clearTimeout(timeout);
+        const mins = (j && typeof j.minutes === 'number') ? Math.round(j.minutes) : null;
+        commuteCache.set(job.key, mins);
+        if (job.el && job.el.isConnected) job.el.textContent = (mins!=null ? (mins+' min') : '—');
+      })
+      .catch(()=>{
+        clearTimeout(timeout);
+        commuteCache.set(job.key, null);
+        if (job.el && job.el.isConnected) job.el.textContent = '—';
+      })
+      .finally(()=>{
+        inflight.delete(job.key);
+        active -= 1;
+        runQueue();
+      });
+    inflight.set(job.key, p);
+  }
+
+  function homeCalRow(ev, color){
+    const s = getStart(ev), e = getEnd(ev), allDay = isAllDay(ev);
+    const d = s ? new Date(s) : null;
+    const day = d ? String(d.getDate()).padStart(2,'0') : '--';
+    const wrap = el('div','cal-grid items-center');
+
+    const dayBox = el('div','cal-daybox', day);
+    const dayWrap = el('div','daywrap'); dayWrap.appendChild(dayBox);
+    wrap.appendChild(dayWrap);
+
+    const time = el('div','cal-card'); time.style.borderColor = color;
+    time.appendChild(el('div','font-semibold mr-2', allDay ? '—' : (d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}))));
+    time.appendChild(el('div','subtle', computeDuration(s,e,allDay)));
+    wrap.appendChild(time);
+
+    const cal = el('div','cal-pill cal-hide-sm', getCalName(ev)); cal.style.borderColor = color; wrap.appendChild(cal);
+
+    const title = el('div','cal-card'); title.style.borderColor = color;
+    const head = document.createElement('a');
+    head.className = 'font-semibold mr-2 underline decoration-dotted';
+    head.textContent = ev.summary || ev.title || '(sans titre)';
+    const calId = ev.calendarId || (ev.organizer && ev.organizer.email) || '';
+    head.href = (ev.id && calId) ? ('/calendar/ui/edit?eventId='+encodeURIComponent(ev.id)+'&calendarId='+encodeURIComponent(calId)) : 'javascript:void(0)';
+    title.appendChild(head);
+    if (ev.location){
+      title.appendChild(el('div','subtle','· ' + (typeof ev.location==='string' ? ev.location : (ev.location.displayName||ev.location.name||''))));
+    }
+    wrap.appendChild(title);
+
+    const cell = el('div','cal-chip cal-hide-md');
+    cell.style.borderColor = color;
+    cell.setAttribute('data-location', extractLocationText(ev) || '');
+    cell.setAttribute('data-at', s || '');
+    cell.appendChild(el('span','mr-2','🚗'));
+    const span = el('span','js-commute-val', cell.getAttribute('data-location') ? '…' : '—');
+    cell.appendChild(span);
+    io.observe(cell);
+    wrap.appendChild(cell);
+
+    return wrap;
+  }
+
+  async function loadCal(){
+    try{
+      const cfg = await (await fetch('/calendar/config',{cache:'no-store'})).json();
+      const colorsById = {}; (cfg.calendars||[]).forEach(c=>colorsById[c.id]=c.color || 'hsl(210 80% 60%)');
+      const min = todayISO(), max = untilISO(7);
+      const rs = await fetch('/calendar/events?time_min='+encodeURIComponent(min)+'&time_max='+encodeURIComponent(max), {cache:'no-store'});
+      if (!rs.ok) throw new Error('HTTP '+rs.status);
+      const data = await rs.json();
+
+      const items = (data.items||[]).slice(0).sort((a,b)=>{
+        const sa=(a.start?.dateTime||a.start?.date||''), sb=(b.start?.dateTime||b.start?.date||'');
+        return new Date(sa)-new Date(sb);
+      });
+
+      const host = document.getElementById('home-cal'); host.innerHTML='';
+      const by = {};
+      items.forEach(ev=>{
+        const s=getStart(ev); if(!s) return; const d=new Date(s);
+        const key = d.toLocaleDateString(undefined,{month:'long', year:'numeric'});
+        (by[key]=by[key]||[]).push(ev);
+      });
+      const months = Object.keys(by);
+      if (!months.length){ host.innerHTML = '<div class="opacity-70">Aucun évènement dans les 7 jours.</div>'; return; }
+
+      months.forEach(label=>{
+        const sec = el('div','space-y-2');
+        sec.appendChild(el('div','cal-month', label));
+        by[label].forEach(ev=>{
+          const cid = (ev.organizer && ev.organizer.email) || ev.calendarId || '';
+          const col = colorsById[cid] || 'hsl(210 80% 60%)';
+          sec.appendChild(homeCalRow(ev, col));
+        });
+        host.appendChild(sec);
+      });
+      document.getElementById('home-cal-err').classList.add('hidden');
+    }catch(e){
+      document.getElementById('home-cal').innerHTML = '';
+      const err = document.getElementById('home-cal-err');
+      err.textContent = 'Impossible de charger le calendrier.';
+      err.classList.remove('hidden');
+    }
+  }
+
+  // ---------- STATUS ICONS ----------
+  function isImageIcon(spec){
+    if (typeof spec !== 'string') return false;
+    const s = spec.trim();
+    return (
+      s.startsWith('/static/icons/') ||
+      s.startsWith('static/icons/') ||
+      s.startsWith('/icons/') ||
+      /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(s)
+    );
+  }
+
+  function renderIcon(el, spec){
+    if (!spec) { el.textContent = '🔘'; return; }
+    if (typeof spec === 'string' && spec.startsWith('lucide:')) {
+      const name = spec.slice(7);
+      el.innerHTML = `<i data-lucide="${name}"></i>`;
+      if (window.lucide && lucide.createIcons && lucide.icons && lucide.icons[name]) {
+        lucide.createIcons({ attrs: { width: 26, height: 26 }, icons: { [name]: lucide.icons[name] } });
+      } else {
+        // fallback if name not found
+        el.textContent = '🔘';
+      }
+    } else if (isImageIcon(spec)) {
+      el.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = spec;
+      img.alt = '';
+      el.appendChild(img);
+    } else {
+      // emoji or plain text
+      el.textContent = spec;
+    }
+  }
+
+  function iconCard(it){
+    const d = document.createElement('button');
+    d.className = 'icon-btn rounded-xl p-3 border transition-colors';
+    d.style.setProperty('--accent', it.color || '#334155');
+    d.innerHTML = `
+      <div class="text-2xl js-ico"></div>
+      <div class="text-sm font-semibold mt-1">${it.label || ''}</div>
+      <div class="text-xs opacity-80 js-display">${it.display || ''}</div>
+      <div class="icon-cd hidden"><div class="bubble js-eta">00:00</div></div>
+    `;
+    renderIcon(d.querySelector('.js-ico'), it.icon);
+
+    // bind overlay to timer state if any
+    const ring = d.querySelector('.icon-cd');
+    const eta  = d.querySelector('.js-eta');
+    const st = _activeTimers.get(it.id);
+    if (st) {
+      st.btn = d; st.ring = ring; st.eta = eta;
+      ring.classList.remove('hidden');
+      const msLeft = Math.max(0, st.endAt - Date.now());
+      const sec = Math.round(msLeft/1000);
+      const pct = st.total > 0 ? 1 - (msLeft / (st.total*1000)) : 0;
+      d.style.setProperty('--deg', `${Math.min(360, Math.max(0, pct*360))}deg`);
+      eta.textContent = _fmtMMSS(sec);
+    } else {
+      ring.classList.add('hidden');
+    }
+
+    // click: cancel active timer or run action
+    d.addEventListener('click', () => {
+      if (_activeTimers.has(it.id)) {
+        fetch(`/status/icons/action/${encodeURIComponent(it.id)}/cancel`, { method:'POST' })
+          .then(()=>{ _activeTimers.delete(it.id); loadIcons(); })
+          .catch(()=> loadIcons());
+        return;
+      }
+      fetch('/status/icons/action/' + encodeURIComponent(it.id), { method:'POST' })
+        .then(()=> loadIcons())
+        .catch(()=> loadIcons());
+    });
+    return d;
+  }
+
+  async function loadIcons(){
+    const errEl = document.getElementById('status-err');
+    try {
+      const r = await fetch('/status/icons/preview', {cache:'no-store'});
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+
+      _updateTimersFromPreview(j.items || []);
+
+      const box = document.getElementById('status-icons');
+      box.innerHTML = '';
+      (j.items || []).forEach(it => box.appendChild(iconCard(it)));
+
+      if (window.lucide && lucide.createIcons) {
+        lucide.createIcons({ attrs: { width: 24, height: 24 } });
+      }
+      errEl.classList.add('hidden');
+    } catch (e) {
+      errEl.textContent = 'Impossible de charger les raccourcis';
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  // ---------- BOOT ----------
+  function boot(){
+    loadWeather().then(fillWeather).catch(()=> {
+      document.getElementById('wx-summary').textContent = 'Météo indisponible';
+    });
+    loadCal();
+    loadIcons();
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', boot, {once:true});
+  } else {
+    boot();
+  }
+})();
+</script>
+
+{% endblock %}

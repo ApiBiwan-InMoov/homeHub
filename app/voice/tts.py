@@ -2,6 +2,7 @@ import pyttsx3
 
 _engine = None
 
+
 def speak(text: str) -> None:
     global _engine
     if _engine is None:

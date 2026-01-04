@@ -1,13 +1,14 @@
 # app/calendar/google_calendar.py
 from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+
 
 class GoogleCalendar:
     def __init__(self, client_secret_path: str, token_path: str, calendar_id: str):
@@ -20,7 +21,7 @@ class GoogleCalendar:
         if self._service:
             return self._service
 
-        creds: Optional[Credentials] = None
+        creds: Credentials | None = None
         try:
             creds = Credentials.from_authorized_user_file(self.token_path, SCOPES)
         except Exception:
@@ -36,26 +37,35 @@ class GoogleCalendar:
         self._service = build("calendar", "v3", credentials=creds)
         return self._service
 
-    def next_event(self) -> Optional[Dict]:
+    def next_event(self) -> dict | None:
         now = datetime.now(timezone.utc).isoformat()
-        result = self.service().events().list(
-            calendarId=self.calendar_id,
-            timeMin=now,
-            maxResults=1,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
+        result = (
+            self.service()
+            .events()
+            .list(
+                calendarId=self.calendar_id,
+                timeMin=now,
+                maxResults=1,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
         items = result.get("items", [])
         return items[0] if items else None
 
-    def upcoming_events(self, limit: int = 10) -> List[Dict]:
+    def upcoming_events(self, limit: int = 10) -> list[dict]:
         now = datetime.now(timezone.utc).isoformat()
-        result = self.service().events().list(
-            calendarId=self.calendar_id,
-            timeMin=now,
-            maxResults=limit,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
+        result = (
+            self.service()
+            .events()
+            .list(
+                calendarId=self.calendar_id,
+                timeMin=now,
+                maxResults=limit,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
         return result.get("items", [])
-

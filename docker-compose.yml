@@ -1,4 +1,3 @@
-cat > docker-compose.yml <<'YML'
 services:
   homehub:
     build: ./docker
@@ -10,5 +9,3 @@ services:
       - ./secrets:/app/secrets:ro
       - ./app:/app/app:rw
     restart: unless-stopped
-YML
-

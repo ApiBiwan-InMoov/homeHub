@@ -1,43 +1,114 @@
-cat > app/config.py <<'PY'
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+# app/config.py
+from __future__ import annotations
+
+from typing import Any
+
+# Pydantic v2 uses pydantic-settings; fall back if not installed.
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore
+
+    _HAS_SETTINGS_V2 = True
+except Exception:
+    from pydantic import BaseSettings  # type: ignore
+
+    SettingsConfigDict = None  # type: ignore
+    _HAS_SETTINGS_V2 = False
+
 
 class Settings(BaseSettings):
-    """Typed application settings loaded from env/.env via pydantic-settings."""
-    # IPX800
-    ipx_host: str = Field(default="192.168.1.50")
-    ipx_port: int = Field(default=80)
-    ipx_user: str = Field(default="")
-    ipx_pass: str = Field(default="")
-    ipx_lights_relay: int = Field(default=1)
-    ipx_heating_relay: int = Field(default=2)
-    ipx_poll_interval: float = Field(default=2.0)
+    # ---- App/server ----
+    host: str = "0.0.0.0"
+    port: int = 8080
+    timezone: str = "Europe/Brussels"
 
-    # Google
-    google_calendar_id: str = Field(default="")
-    google_oauth_client_secrets: str = Field(default="secrets/client_secret.json")
-    google_token_file: str = Field(default="secrets/token.json")
+    # ---- Location (used by travel + weather) ----
+    latitude: float = 50.716
+    longitude: float = 4.519
 
-    # Server
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8080)
+    # ---- Poller ----
+    poll_every_seconds: float = 2.0
 
-    # Location
-    latitude: float = Field(default=50.716)
-    longitude: float = Field(default=4.519)
-    timezone: str = Field(default="Europe/Brussels")
+    # ---- IPX ----
+    ipx_host: str = ""
+    ipx_port: int = 80
+    ipx_user: str = ""
+    ipx_pass: str = ""
+    ipx_lights_relay: int = 1
+    ipx_heating_relay: int = 2
+    ipx_poll_interval: float = 2.0
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
-    )
+    # Allow overriding the concrete client class via .env
+    ipx_client_module: str | None = None  # e.g. "app.ipx800.client"
+    ipx_client_class: str | None = None  # e.g. "IPX800Client"
 
-    @field_validator("ipx_port", "port")
-    @classmethod
-    def _port_positive(cls, v: int) -> int:
-        if v <= 0 or v > 65535:
-            raise ValueError("Port must be between 1 and 65535")
-        return v
+    # ---- Google Calendar ----
+    google_calendar_id: str = ""
+    google_oauth_client_secrets: str = "secrets/client_secret.json"
+    google_token_file: str = "secrets/token.json"
 
+    # Pydantic v2 configuration
+    if _HAS_SETTINGS_V2 and SettingsConfigDict is not None:
+        model_config = SettingsConfigDict(
+            env_file=".env",
+            env_file_encoding="utf-8",
+            extra="ignore",
+        )
+    else:
+        # Fallback for environments without pydantic-settings (or v1 style)
+        class Config:  # type: ignore[no-redef]
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+
+
+# Singleton settings object
 settings = Settings()
-PY
 
+
+# --- Persist selected settings back to .env (simple writer) -------------------
+_ENV_MAP: dict[str, str] = {
+    # server
+    "HOST": "host",
+    "PORT": "port",
+    "TIMEZONE": "timezone",
+    # location
+    "LATITUDE": "latitude",
+    "LONGITUDE": "longitude",
+    # poller
+    "POLL_EVERY_SECONDS": "poll_every_seconds",
+    # ipx
+    "IPX_HOST": "ipx_host",
+    "IPX_PORT": "ipx_port",
+    "IPX_USER": "ipx_user",
+    "IPX_PASS": "ipx_pass",
+    "IPX_LIGHTS_RELAY": "ipx_lights_relay",
+    "IPX_HEATING_RELAY": "ipx_heating_relay",
+    "IPX_POLL_INTERVAL": "ipx_poll_interval",
+    "IPX_CLIENT_MODULE": "ipx_client_module",
+    "IPX_CLIENT_CLASS": "ipx_client_class",
+    # google
+    "GOOGLE_CALENDAR_ID": "google_calendar_id",
+    "GOOGLE_OAUTH_CLIENT_SECRETS": "google_oauth_client_secrets",
+    "GOOGLE_TOKEN_FILE": "google_token_file",
+}
+
+
+def _coerce_env_value(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
+
+
+def save_settings(s: Settings, path: str = ".env") -> None:
+    """
+    Minimal .env writer: writes only the known keys from _ENV_MAP.
+    This overwrites the file; extend if you need to preserve unknown lines.
+    """
+    lines = []
+    for env_key, attr in _ENV_MAP.items():
+        val = getattr(s, attr, None)
+        lines.append(f"{env_key}={_coerce_env_value(val)}")
+    content = "\n".join(lines) + "\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)

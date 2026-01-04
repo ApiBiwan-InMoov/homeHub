@@ -1,16 +1,19 @@
 from dataclasses import dataclass
-from typing import Optional
+
+
 
 @dataclass
 class Intent:
     action: str
-    device: Optional[str] = None
-    value: Optional[bool] = None
+    device: str | None = None
+    value: bool | None = None
+
 
 LIGHT_KEYWORDS = {"light", "lights", "lamp"}
-HEAT_KEYWORDS  = {"heat", "heating", "chauffage"}
+HEAT_KEYWORDS = {"heat", "heating", "chauffage"}
 
-def parse_command(text: str) -> Optional[Intent]:
+
+def parse_command(text: str) -> Intent | None:
     if not text:
         return None
     t = text.lower()

@@ -1,0 +1,200 @@
+<!-- app/ui/templates/inputs_config.html -->
+{% extends "base.html" %}
+{% block title %}Inputs · Analog Config · HomeHub{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6 flex items-center justify-between">
+  <span>Analog Inputs · Configuration</span>
+  <a href="/inputs" class="px-3 py-1 rounded-lg border border-slate-600 bg-slate-800 hover:bg-slate-700 text-sm">
+    ← Back to Inputs
+  </a>
+</h1>
+
+<div class="space-y-4">
+  <div class="rounded-xl border border-slate-700 bg-slate-800/60 p-4">
+    <p class="text-sm opacity-80">
+      Choose a <strong>mode</strong> per channel and set its parameters. The Inputs page will show the
+      converted value (and volts). Supported modes:
+      <code class="px-1 rounded bg-slate-700/80">voltage</code>,
+      <code class="px-1 rounded bg-slate-700/80">counts</code>,
+      <code class="px-1 rounded bg-slate-700/80">mv</code>,
+      <code class="px-1 rounded bg-slate-700/80">scale_0_10v</code>,
+      <code class="px-1 rounded bg-slate-700/80">linear_from_volts</code>,
+      <code class="px-1 rounded bg-slate-700/80">current_4_20ma</code>,
+      <code class="px-1 rounded bg-slate-700/80">ntc_beta</code>.
+    </p>
+  </div>
+
+  <div id="cfg-grid" class="grid grid-cols-1 gap-4"></div>
+</div>
+
+<script>
+const MODES = [
+  { value: "voltage", label: "Voltage (V)", params: [] },
+  { value: "counts",  label: "ADC counts",   params: [] },
+  { value: "mv",      label: "Millivolts",   params: [] },
+  { value: "scale_0_10v", label: "Scale 0–10 V → range", params: [
+      { key: "out_min", label: "Out min", type: "number", step: "any", placeholder: "0" },
+      { key: "out_max", label: "Out max", type: "number", step: "any", placeholder: "100" },
+  ]},
+  { value: "linear_from_volts", label: "Linear from volts (a·V + b)", params: [
+      { key: "a", label: "a (gain)", type: "number", step: "any", placeholder: "1.0" },
+      { key: "b", label: "b (offset)", type: "number", step: "any", placeholder: "0.0" },
+  ]},
+  { value: "current_4_20ma", label: "4–20 mA via shunt", params: [
+      { key: "shunt_ohms", label: "Shunt Ω", type: "number", step: "any", placeholder: "150" },
+      { key: "out_min", label: "Out min", type: "number", step: "any", placeholder: "0" },
+      { key: "out_max", label: "Out max", type: "number", step: "any", placeholder: "100" },
+  ]},
+  { value: "ntc_beta", label: "NTC β thermistor (°C)", params: [
+      { key: "beta", label: "β", type: "number", step: "any", placeholder: "3950" },
+      { key: "r_series", label: "Series R (Ω)", type: "number", step: "any", placeholder: "10000" },
+      { key: "r0", label: "R₀ (Ω @ T₀)", type: "number", step: "any", placeholder: "10000" },
+      { key: "t0_c", label: "T₀ (°C)", type: "number", step: "any", placeholder: "25" },
+      { key: "vref", label: "Vref (V)", type: "number", step: "any", placeholder: "3.3" },
+  ]},
+];
+
+async function loadConfigs() {
+  const r = await fetch('/inputs/config/analogs?max_analogs=16', { cache: 'no-store' });
+  if (!r.ok) throw new Error(await r.text());
+  const j = await r.json();
+  return Array.isArray(j.configs) ? j.configs : [];
+}
+
+function el(tag, cls, text) {
+  const d = document.createElement(tag);
+  if (cls) d.className = cls;
+  if (text !== undefined && text !== null) d.textContent = text;
+  return d;
+}
+
+function inputField({type="text", step, placeholder, value}) {
+  const i = document.createElement('input');
+  i.type = type;
+  if (step) i.step = step;
+  i.placeholder = placeholder || '';
+  if (value !== undefined && value !== null) i.value = value;
+  i.className = "w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm";
+  return i;
+}
+
+function row(index, cfg) {
+  const wrap = el('div', 'rounded-xl border border-slate-700 bg-slate-800/60 p-3');
+  const header = el('div', 'flex items-center justify-between mb-3');
+  header.appendChild(el('div', 'font-semibold', `A${index}`));
+
+  const saveBtn = el('button', 'px-3 py-1 rounded-lg border border-slate-600 bg-slate-700 hover:bg-slate-600 text-sm', 'Save');
+  header.appendChild(saveBtn);
+
+  wrap.appendChild(header);
+
+  const grid = el('div', 'grid sm:grid-cols-2 lg:grid-cols-4 gap-3');
+
+  // Mode select
+  const modeBox = el('div');
+  modeBox.appendChild(el('div', 'text-xs opacity-70 mb-1', 'Mode'));
+  const sel = document.createElement('select');
+  sel.className = "w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm";
+  MODES.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.value;
+    o.textContent = m.label;
+    if ((cfg.mode || 'voltage') === m.value) o.selected = true;
+    sel.appendChild(o);
+  });
+  modeBox.appendChild(sel);
+  grid.appendChild(modeBox);
+
+  // Unit
+  const unitBox = el('div');
+  unitBox.appendChild(el('div', 'text-xs opacity-70 mb-1', 'Unit'));
+  const unitInput = inputField({ value: cfg.unit ?? (cfg.mode==='voltage' ? 'V' : '') });
+  unitBox.appendChild(unitInput);
+  grid.appendChild(unitBox);
+
+  // Decimals
+  const decBox = el('div');
+  decBox.appendChild(el('div', 'text-xs opacity-70 mb-1', 'Decimals'));
+  const decInput = inputField({ type: 'number', step: '1', value: (cfg.decimals ?? 2) });
+  decBox.appendChild(decInput);
+  grid.appendChild(decBox);
+
+  // Params container
+  const paramsBox = el('div', 'sm:col-span-2 lg:col-span-1');
+  paramsBox.appendChild(el('div', 'text-xs opacity-70 mb-1', 'Parameters'));
+  const paramsGrid = el('div', 'grid grid-cols-2 gap-2');
+  paramsBox.appendChild(paramsGrid);
+  grid.appendChild(paramsBox);
+
+  wrap.appendChild(grid);
+
+  function renderParams() {
+    paramsGrid.innerHTML = '';
+    const mode = sel.value;
+    const def = MODES.find(m => m.value === mode);
+    const params = (cfg.params && typeof cfg.params === 'object') ? { ...cfg.params } : {};
+    (def?.params || []).forEach(p => {
+      const group = el('div');
+      const label = el('div', 'text-xs opacity-70 mb-1', p.label);
+      const inp = inputField({ type: p.type, step: p.step, placeholder: p.placeholder, value: params[p.key] ?? '' });
+      inp.dataset.key = p.key;
+      group.appendChild(label);
+      group.appendChild(inp);
+      paramsGrid.appendChild(group);
+    });
+  }
+  renderParams();
+  sel.addEventListener('change', renderParams);
+
+  saveBtn.addEventListener('click', async () => {
+    const mode = sel.value;
+    const unit = unitInput.value || null;
+    const decimals = parseInt(decInput.value || '0', 10);
+    const params = {};
+    paramsGrid.querySelectorAll('input').forEach(inp => {
+      const key = inp.dataset.key;
+      let val = inp.value;
+      if (val === '') return;
+      const num = Number(val);
+      params[key] = isFinite(num) ? num : val;
+    });
+
+    const payload = {
+      index,
+      cfg: { mode, unit, decimals, params }
+    };
+
+    try {
+      const r = await fetch('/inputs/config/analog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      saveBtn.textContent = 'Saved ✓';
+      setTimeout(() => (saveBtn.textContent = 'Save'), 1200);
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
+  });
+
+  return wrap;
+}
+
+(async function init(){
+  try {
+    const configs = await loadConfigs();
+    const grid = document.getElementById('cfg-grid');
+    grid.innerHTML = '';
+    const maxAnalogs = Math.max(16, configs.length || 0);
+    for (let i = 0; i < maxAnalogs; i++) {
+      const cfg = configs[i] || { mode: 'voltage', unit: 'V', decimals: 3, params: {} };
+      grid.appendChild(row(i, cfg));
+    }
+  } catch (e) {
+    alert('Failed to load configs: ' + e.message);
+  }
+})();
+</script>
+{% endblock %}
