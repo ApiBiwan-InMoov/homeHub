@@ -12,6 +12,8 @@ docker compose up --build
 
 Visit http://localhost:8080
 
+If you want to use microphone features inside the container, ensure PortAudio is available (already installed in the Dockerfile) and provide ALSA devices to the container as needed (mount `/dev/snd` and join the `audio` group).
+
 ## Quick start (Manual dev)
 
 ```bash
@@ -24,6 +26,24 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 Visit http://localhost:8080
+
+If you see `sounddevice not available: PortAudio library not found`, install the PortAudio runtime:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libportaudio2 portaudio19-dev
+```
+
+For Docker Compose (example):
+
+```yaml
+services:
+  homehub:
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+```
 
 ## Google Calendar
 Place your OAuth client secrets at `secrets/client_secret.json`. First run prompts a browser to grant access; token will be saved at `secrets/token.json`.

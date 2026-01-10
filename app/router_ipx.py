@@ -24,8 +24,11 @@ try:
     from app.services.ipx_helpers import (
         toggle_output as _h_toggle,
     )
+    from app.services.ipx_helpers import (
+        _base_url as _h_base_url,
+    )
 except Exception:
-    _h_get_outputs = _h_toggle = _h_set = None  # type: ignore
+    _h_get_outputs = _h_toggle = _h_set = _h_base_url = None  # type: ignore
 
 router = APIRouter(prefix="/ipx", tags=["ipx"])
 templates = Jinja2Templates(directory="app/ui/templates")
@@ -95,7 +98,7 @@ def _guess_preset_url(base: str, relay: int, op: str, state: bool | None) -> str
 # ──────────────────────────────────────────────────────────────────────────────
 # Low-level call wrappers (log timing + predicted URL)
 # ──────────────────────────────────────────────────────────────────────────────
-def _call_helper(tag: str, fn: Callable, *args, **kwargs):
+def _call_helper(tag: str, fn: Callable, *args, log_extra: dict[str, Any] | None = None, **kwargs):
     t0 = time.perf_counter()
     ok = False
     try:
@@ -103,7 +106,10 @@ def _call_helper(tag: str, fn: Callable, *args, **kwargs):
         ok = True
         return res
     finally:
-        _log("ipx_call", helper=tag, ok=ok, elapsed_ms=int((time.perf_counter() - t0) * 1000))
+        entry = {"event": "ipx_call", "helper": tag, "ok": ok, "elapsed_ms": int((time.perf_counter() - t0) * 1000)}
+        if log_extra:
+            entry.update(log_extra)
+        _log(**entry)
 
 
 def _call_ipx(ipx, method: str, *args, **kwargs):
@@ -144,6 +150,7 @@ def _call_ipx(ipx, method: str, *args, **kwargs):
             "elapsed_ms": int((time.perf_counter() - t0) * 1000),
         }
         if http_url:
+            log_entry["http_url"] = http_url
             log_entry["http_url_guess"] = http_url
         _log(**log_entry)
 
@@ -155,7 +162,15 @@ def _get_outputs(ipx, max_relays: int | None = None) -> list[bool]:
     # Prefer helper (no kwargs to avoid signature mismatches)
     if _h_get_outputs:
         try:
-            outs = _call_helper("get_output_states", _h_get_outputs, ipx)
+            log_extra = None
+            if _h_base_url:
+                try:
+                    base = _h_base_url(ipx)
+                    log_extra = {"http_url": f"{base}/status.xml"}
+                except Exception:
+                    log_extra = None
+
+            outs = _call_helper("get_output_states", _h_get_outputs, ipx, log_extra=log_extra)
             outs = list(outs or [])
             return outs[:max_relays] if max_relays is not None else outs
         except Exception as e:
@@ -177,7 +192,16 @@ def _toggle(ipx, relay: int, curr: bool | None) -> bool | None:
     # Prefer helper
     if _h_toggle:
         try:
-            _call_helper("toggle_output", _h_toggle, ipx, relay)
+            log_extra = None
+            if _h_base_url:
+                try:
+                    base = _h_base_url(ipx)
+                    target = (not curr) if curr is not None else True
+                    log_extra = {"http_url": f"{base}/preset.htm?set{relay}={'1' if target else '0'}"}
+                except Exception:
+                    log_extra = None
+
+            _call_helper("toggle_output", _h_toggle, ipx, relay, log_extra=log_extra)
             return None if curr is None else (not curr)
         except Exception as e:
             _log("ipx_helper_error", helper="toggle_output", error=str(e))
@@ -207,7 +231,15 @@ def _set(ipx, relay: int, state: bool) -> bool:
     # Prefer helper
     if _h_set:
         try:
-            _call_helper("set_output_state", _h_set, ipx, relay, state)
+            log_extra = None
+            if _h_base_url:
+                try:
+                    base = _h_base_url(ipx)
+                    log_extra = {"http_url": f"{base}/preset.htm?set{relay}={'1' if state else '0'}"}
+                except Exception:
+                    log_extra = None
+
+            _call_helper("set_output_state", _h_set, ipx, relay, state, log_extra=log_extra)
             return True
         except Exception as e:
             _log("ipx_helper_error", helper="set_output_state", error=str(e))

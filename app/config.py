@@ -51,6 +51,20 @@ class Settings(BaseSettings):
     # ---- Google Maps ----
     google_maps_api_key: str | None = None
 
+    # ---- Voice / Audio ----
+    voice_enabled: bool = False
+    voice_language: str = "fr"
+    mic_device: str | None = None
+    mic_sample_rate: int = 16000
+    mic_channels: int = 1
+
+    # ---- Local LLM (for MCP/agent integrations) ----
+    llm_provider: str = "disabled"  # "ollama" | "mock" | "disabled"
+    llm_model: str = "mistral"  # friendly to French; override per install
+    llm_base_url: str = "http://localhost:11434"
+    llm_timeout: float = 30.0
+    llm_system_prompt: str = "Tu es un assistant domotique francophone local."
+
     # Pydantic v2 configuration
     if _HAS_SETTINGS_V2 and SettingsConfigDict is not None:
         model_config = SettingsConfigDict(
@@ -97,6 +111,18 @@ _ENV_MAP: dict[str, str] = {
     "GOOGLE_OAUTH_REDIRECT_URI": "google_oauth_redirect_uri",
     "CALENDAR_PREFS_PATH": "calendar_prefs_path",
     "GOOGLE_MAPS_API_KEY": "google_maps_api_key",
+    # voice
+    "VOICE_ENABLED": "voice_enabled",
+    "VOICE_LANGUAGE": "voice_language",
+    "MIC_DEVICE": "mic_device",
+    "MIC_SAMPLE_RATE": "mic_sample_rate",
+    "MIC_CHANNELS": "mic_channels",
+    # llm
+    "LLM_PROVIDER": "llm_provider",
+    "LLM_MODEL": "llm_model",
+    "LLM_BASE_URL": "llm_base_url",
+    "LLM_TIMEOUT": "llm_timeout",
+    "LLM_SYSTEM_PROMPT": "llm_system_prompt",
 }
 
 

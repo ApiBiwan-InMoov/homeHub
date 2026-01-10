@@ -16,6 +16,7 @@ dist/
 .env
 .env.*
 secrets/
+app/data/
 
 .idea/
 .vscode/

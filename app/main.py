@@ -75,6 +75,7 @@ for module_name in [
     "router_travel",
     "router_home",
     "router_status_icons",
+    "router_llm",
     "router_actions",
 ]:
     module = _load_router_module(module_name)

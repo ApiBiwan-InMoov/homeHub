@@ -1,13 +1,19 @@
 services:
   homehub:
+    network_mode: host
     build:
       context: .
       dockerfile: docker/Dockerfile
     env_file:
       - .env
-    ports:
-      - "8080:8080"
     volumes:
       - ./secrets:/app/secrets:ro
       - ./app:/app/app:rw
+    # Expose host sound devices for microphone features (ALSA/PortAudio)
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

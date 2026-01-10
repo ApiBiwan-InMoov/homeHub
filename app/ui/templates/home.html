@@ -267,25 +267,22 @@
     btn.className = 'icon-btn';
     btn.style.setProperty('--accent', it.color || '#10b981');
 
-    btn.innerHTML = `
-      <div class="icon-main">
-        <div class="icon-ico-wrap">
-          <div class="icon-ring"></div>
-          <div class="icon-ico js-ico"></div>
-          <div class="icon-eta js-eta">0:00</div>
-        </div>
-        <div class="icon-meta">
-          <div class="meta-label">${it.label || ''}</div>
-          <div class="js-display">${it.display || ''}</div>
-        </div>
-      </div>
-      <div class="icon-busy"><div class="spin"></div></div>
-    `;
+    const main = el('div','icon-main');
+    const wrap = el('div','icon-ico-wrap');
+    const ring = el('div','icon-ring');
+    const ico  = el('div','icon-ico js-ico');
+    const eta  = el('div','icon-eta js-eta','0:00');
+    wrap.append(ring, ico, eta);
 
-    const wrap = btn.querySelector('.icon-ico-wrap');
-    const ring = btn.querySelector('.icon-ring');
-    const eta  = btn.querySelector('.js-eta');
-    renderIcon(btn.querySelector('.js-ico'), it.icon);
+    const meta = el('div','icon-meta');
+    meta.append(el('div','meta-label', it.label || ''), el('div','js-display', it.display || ''));
+
+    main.append(wrap, meta);
+    const busy = el('div','icon-busy');
+    busy.append(el('div','spin'));
+    btn.append(main, busy);
+
+    renderIcon(ico, it.icon);
 
     // Attach to existing timer if any
     const st = _activeTimers.get(it.id);
@@ -391,6 +388,11 @@
     const yTemp = v => M.t + (H - ((v - tmin)/(tmax - tmin || 1))*(H*0.8)) - 4;
     const barBase = M.t + H, barMaxH = H*0.32;
 
+    const colorPos = 'rgba(99,102,241,.95)';   // indigo for >= 0°C
+    const colorNeg = 'rgba(59,130,246,.95)';   // blue for < 0°C
+    const colorPosFill = 'rgba(99,102,241,.18)';
+    const colorNegFill = 'rgba(59,130,246,.14)';
+
     // grid + ticks
     const grid = 'rgba(148,163,184,.2)';
     const grid2 = 'rgba(148,163,184,.15)';
@@ -402,18 +404,40 @@
     yTicks.forEach(v=>{ const yy=yTemp(v); ctx.strokeStyle=grid2; ctx.beginPath(); ctx.moveTo(M.l,yy); ctx.lineTo(M.l+W,yy); ctx.stroke(); ctx.fillText(Math.round(v)+'°', M.l-6, yy+3); });
 
     // precip bars
-    ctx.fillStyle = 'rgba(59,130,246,.45)';
+    ctx.fillStyle = 'rgba(56,189,248,.65)';
     const barW = Math.max(2, W/(hours.length*1.35));
     precs.forEach((p,i)=>{ const h=(p/pmax)*barMaxH; ctx.fillRect(x(i)-barW/2, barBase-h, barW, h); });
 
-    // temp area + line
-    const grad = ctx.createLinearGradient(0,M.t,0,M.t+H); grad.addColorStop(0,'rgba(244,63,94,.25)'); grad.addColorStop(1,'rgba(244,63,94,0)');
-    ctx.beginPath(); ctx.moveTo(x(0), yTemp(temps[0])); for(let i=1;i<hours.length;i++){ ctx.lineTo(x(i), yTemp(temps[i])); }
+    // temp fill area
+    const hasNeg = temps.some(t=>t<0);
+    const grad = ctx.createLinearGradient(0,M.t,0,M.t+H);
+    grad.addColorStop(0, hasNeg ? colorNegFill : colorPosFill);
+    grad.addColorStop(1, 'rgba(99,102,241,0)');
+    ctx.beginPath(); ctx.moveTo(x(0), yTemp(temps[0]));
+    for(let i=1;i<hours.length;i++){ ctx.lineTo(x(i), yTemp(temps[i])); }
     ctx.lineTo(x(hours.length-1), barBase); ctx.lineTo(x(0), barBase); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
-    ctx.beginPath(); ctx.lineWidth = 2; ctx.strokeStyle='rgba(244,63,94,.95)';
-    ctx.moveTo(x(0), yTemp(temps[0])); for(let i=1;i<hours.length;i++){ ctx.lineTo(x(i), yTemp(temps[i])); } ctx.stroke();
-    ctx.fillStyle='rgba(244,63,94,.95)'; for(let i=0;i<hours.length;i+=3){ ctx.beginPath(); ctx.arc(x(i), yTemp(temps[i]), 2.5, 0, Math.PI*2); ctx.fill(); }
-    ctx.textAlign='center'; ctx.fillStyle='rgba(203,213,225,.75)'; for(let i=0;i<hours.length;i+=3){ const hh=times[i].toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}); ctx.fillText(hh, x(i), M.t+H+16); }
+
+    // temp line with per-segment color (blue when crossing below zero)
+    ctx.lineWidth = 3;
+    for(let i=1;i<hours.length;i++){
+      const v0 = temps[i-1];
+      const v1 = temps[i];
+      const segNeg = (v0 < 0) || (v1 < 0);
+      ctx.strokeStyle = segNeg ? colorNeg : colorPos;
+      ctx.beginPath();
+      ctx.moveTo(x(i-1), yTemp(v0));
+      ctx.lineTo(x(i), yTemp(v1));
+      ctx.stroke();
+    }
+
+    // points and hour labels
+    for(let i=0;i<hours.length;i+=1){
+      const v = temps[i];
+      ctx.fillStyle = (v < 0) ? colorNeg : colorPos;
+      ctx.beginPath(); ctx.arc(x(i), yTemp(v), 3.25, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.textAlign='center'; ctx.fillStyle='rgba(203,213,225,.75)';
+    for(let i=0;i<hours.length;i+=3){ const hh=times[i].toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}); ctx.fillText(hh, x(i), M.t+H+16); }
   }
 
   function fillWeather(wx){
@@ -647,107 +671,6 @@
   }
 
   // ---------- STATUS ICONS ----------
-  function isImageIcon(spec){
-    if (typeof spec !== 'string') return false;
-    const s = spec.trim();
-    return (
-      s.startsWith('/static/icons/') ||
-      s.startsWith('static/icons/') ||
-      s.startsWith('/icons/') ||
-      /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(s)
-    );
-  }
-
-  function renderIcon(el, spec){
-    if (!spec) { el.textContent = '🔘'; return; }
-    if (typeof spec === 'string' && spec.startsWith('lucide:')) {
-      const name = spec.slice(7);
-      el.innerHTML = `<i data-lucide="${name}"></i>`;
-      if (window.lucide && lucide.createIcons && lucide.icons && lucide.icons[name]) {
-        lucide.createIcons({ attrs: { width: 26, height: 26 }, icons: { [name]: lucide.icons[name] } });
-      } else {
-        // fallback if name not found
-        el.textContent = '🔘';
-      }
-    } else if (isImageIcon(spec)) {
-      el.innerHTML = '';
-      const img = document.createElement('img');
-      img.src = spec;
-      img.alt = '';
-      el.appendChild(img);
-    } else {
-      // emoji or plain text
-      el.textContent = spec;
-    }
-  }
-
-  function iconCard(it){
-    const d = document.createElement('button');
-    d.className = 'icon-btn rounded-xl p-3 border transition-colors';
-    d.style.setProperty('--accent', it.color || '#334155');
-    d.innerHTML = `
-      <div class="text-2xl js-ico"></div>
-      <div class="text-sm font-semibold mt-1">${it.label || ''}</div>
-      <div class="text-xs opacity-80 js-display">${it.display || ''}</div>
-      <div class="icon-cd hidden"><div class="bubble js-eta">00:00</div></div>
-    `;
-    renderIcon(d.querySelector('.js-ico'), it.icon);
-
-    // bind overlay to timer state if any
-    const ring = d.querySelector('.icon-cd');
-    const eta  = d.querySelector('.js-eta');
-    const st = _activeTimers.get(it.id);
-    if (st) {
-      st.btn = d; st.ring = ring; st.eta = eta;
-      ring.classList.remove('hidden');
-      const msLeft = Math.max(0, st.endAt - Date.now());
-      const sec = Math.round(msLeft/1000);
-      const pct = st.total > 0 ? 1 - (msLeft / (st.total*1000)) : 0;
-      d.style.setProperty('--deg', `${Math.min(360, Math.max(0, pct*360))}deg`);
-      eta.textContent = _fmtMMSS(sec);
-    } else {
-      ring.classList.add('hidden');
-    }
-
-    // click: cancel active timer or run action
-    d.addEventListener('click', () => {
-      if (_activeTimers.has(it.id)) {
-        fetch(`/status/icons/action/${encodeURIComponent(it.id)}/cancel`, { method:'POST' })
-          .then(()=>{ _activeTimers.delete(it.id); loadIcons(); })
-          .catch(()=> loadIcons());
-        return;
-      }
-      fetch('/status/icons/action/' + encodeURIComponent(it.id), { method:'POST' })
-        .then(()=> loadIcons())
-        .catch(()=> loadIcons());
-    });
-    return d;
-  }
-
-  async function loadIcons(){
-    const errEl = document.getElementById('status-err');
-    try {
-      const r = await fetch('/status/icons/preview', {cache:'no-store'});
-      if (!r.ok) throw new Error('HTTP '+r.status);
-      const j = await r.json();
-
-      _updateTimersFromPreview(j.items || []);
-
-      const box = document.getElementById('status-icons');
-      box.innerHTML = '';
-      (j.items || []).forEach(it => box.appendChild(iconCard(it)));
-
-      if (window.lucide && lucide.createIcons) {
-        lucide.createIcons({ attrs: { width: 24, height: 24 } });
-      }
-      errEl.classList.add('hidden');
-    } catch (e) {
-      errEl.textContent = 'Impossible de charger les raccourcis';
-      errEl.classList.remove('hidden');
-    }
-  }
-
-  // ---------- BOOT ----------
   function boot(){
     loadWeather().then(fillWeather).catch(()=> {
       document.getElementById('wx-summary').textContent = 'Météo indisponible';
