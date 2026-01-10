@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Plan du site · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-8">
+  <h1 class="text-3xl font-bold border-b border-slate-700 pb-4">Plan du site</h1>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Main Sections -->
+    <section class="space-y-4">
+      <h2 class="text-xl font-semibold text-blue-400">Sections Principales</h2>
+      <ul class="space-y-2">
+        <li>
+          <a href="/" class="hover:text-blue-300 flex items-center gap-2">
+            <span>🏠</span> Accueil
+          </a>
+        </li>
+        <li>
+          <a href="/calendar/ui" class="hover:text-blue-300 flex items-center gap-2">
+            <span>📅</span> Agenda
+          </a>
+        </li>
+        <li>
+          <a href="/weather" class="hover:text-blue-300 flex items-center gap-2">
+            <span>☀️</span> Météo
+          </a>
+        </li>
+        <li>
+          <a href="/ipx" class="hover:text-blue-300 flex items-center gap-2">
+            <span>⚡</span> IPX Outputs (Élec)
+          </a>
+        </li>
+        <li>
+          <a href="/inputs" class="hover:text-blue-300 flex items-center gap-2">
+            <span>🧩</span> Inputs
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Configuration & Tools -->
+    <section class="space-y-4">
+      <h2 class="text-xl font-semibold text-amber-400">Configuration & Outils</h2>
+      <ul class="space-y-2">
+        <li>
+          <a href="/health/ui" class="hover:text-amber-300 flex items-center gap-2">
+            <span>🛠️</span> Santé du système
+          </a>
+        </li>
+        <li>
+          <a href="/inputs/config" class="hover:text-amber-300 flex items-center gap-2">
+            <span>⚙️</span> Configuration des Inputs
+          </a>
+        </li>
+        <li>
+          <a href="/status_icons/ui" class="hover:text-amber-300 flex items-center gap-2">
+            <span>🔘</span> Configuration des Raccourcis
+          </a>
+        </li>
+        <li>
+          <a href="/status_icons/library" class="hover:text-amber-300 flex items-center gap-2">
+            <span>🖼️</span> Bibliothèque d'icônes
+          </a>
+        </li>
+      </ul>
+    </section>
+
+    <!-- API & Debug (Optional) -->
+    <section class="space-y-4">
+      <h2 class="text-xl font-semibold text-slate-400">API & Debug</h2>
+      <ul class="space-y-2 text-sm opacity-80">
+        <li><a href="/ipx/debug/status-xml" class="hover:underline">Debug IPX (XML)</a></li>
+        <li><a href="/ipx/debug/parsed" class="hover:underline">Debug IPX (Parsed)</a></li>
+        <li><a href="/ipx/debug/poller-state" class="hover:underline">État du Poller</a></li>
+        <li><a href="/health" class="hover:underline">Santé (JSON)</a></li>
+        <li><a href="/calendar/events" class="hover:underline">Évènements Calendrier (JSON)</a></li>
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}
