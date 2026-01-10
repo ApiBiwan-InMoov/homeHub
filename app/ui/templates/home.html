@@ -45,14 +45,21 @@
     </div>
   </section>
 
-  <!-- CALENDAR (next 7 days; same layout as calendar page) -->
+  <!-- CALENDAR (next 14 days) -->
   <section>
     <div class="flex items-center justify-between">
-      <h2 class="text-xl font-semibold">Calendrier (7 jours)</h2>
+      <h2 class="text-xl font-semibold">Agenda (2 semaines)</h2>
       <a href="/calendar/ui" class="px-3 py-1 rounded bg-slate-700">Ouvrir</a>
     </div>
     <div id="home-cal" class="space-y-6 mt-3"></div>
     <div id="home-cal-err" class="text-sm text-amber-400 hidden"></div>
+  </section>
+
+  <!-- ACTION BUTTON -->
+  <section class="flex justify-center py-4">
+    <button id="main-action-btn" class="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/50 flex items-center justify-center text-4xl transition-transform active:scale-95">
+      🏠
+    </button>
   </section>
 
   <!-- STATUS STRIP -->
@@ -93,8 +100,6 @@
  .cal-range{ font-size:.80rem;margin-right:.5rem; }
 
  /* Status icon cards + countdown ring */
-<style>
-/* ... keep your existing styles ... */
 
 /* --- Status icons card --- */
 .icon-btn{
@@ -424,7 +429,7 @@
     redraw();
 
     const hw = document.getElementById('wx-hourly'); hw.innerHTML = '';
-    wx.hourly24.forEach(h=>{
+    wx.hourly24.slice(0, 18).forEach(h=>{
       const chip = el('div','badge hourchip flex flex-col items-center gap-1');
       chip.appendChild(el('div','text-xs opacity-70', fmtHour(h.time)));
       chip.appendChild(el('div','text-xl', wxIcon(h.code!=null ? h.code : (h.p>0 ? 61 : 0))));
@@ -460,7 +465,7 @@
 
   function extractLocationText(ev){
     const val = ev && ev.location;
-    if (typeof val === 'string') return val;
+    if (typeof val === 'string' && val.trim()) return val;
     if (val && typeof val === 'object'){
       const ks=['displayName','name','address','formatted','query','title','description'];
       for (let k of ks){ const v=val[k]; if (typeof v==='string' && v.trim()) return v; }
@@ -477,6 +482,11 @@
         }
       }
     }
+    // Fallback to description (matching Python logic)
+    var desc = ev && ev.description;
+    if (typeof desc === 'string' && desc.trim()){
+      return desc.replace(/<[^>]+>/g, ' ');
+    }
     return '';
   }
 
@@ -492,7 +502,14 @@
       const chip = ent.target;
       const loc = chip.getAttribute('data-location');
       const at  = chip.getAttribute('data-at');
+      const drive_mins = chip.getAttribute('data-drive-minutes');
       const span = chip.querySelector('.js-commute-val');
+
+      if (drive_mins !== null && drive_mins !== '' && drive_mins !== 'null') {
+        span.textContent = drive_mins + ' min';
+        return;
+      }
+
       if (!loc){ span.textContent='—'; return; }
       const key = (loc.trim()+'|'+String(at||'').trim());
 
@@ -562,15 +579,21 @@
     const calId = ev.calendarId || (ev.organizer && ev.organizer.email) || '';
     head.href = (ev.id && calId) ? ('/calendar/ui/edit?eventId='+encodeURIComponent(ev.id)+'&calendarId='+encodeURIComponent(calId)) : 'javascript:void(0)';
     title.appendChild(head);
-    if (ev.location){
-      title.appendChild(el('div','subtle','· ' + (typeof ev.location==='string' ? ev.location : (ev.location.displayName||ev.location.name||''))));
+    
+    var locTxt = extractLocationText(ev);
+    if (locTxt){
+      title.appendChild(el('div','subtle','· ' + locTxt));
     }
     wrap.appendChild(title);
 
     const cell = el('div','cal-chip cal-hide-md');
     cell.style.borderColor = color;
-    cell.setAttribute('data-location', extractLocationText(ev) || '');
+    cell.setAttribute('data-location', locTxt || '');
     cell.setAttribute('data-at', s || '');
+
+    var dm = ev.drive_minutes || ev.trip_minutes;
+    if (dm != null) cell.setAttribute('data-drive-minutes', dm);
+
     cell.appendChild(el('span','mr-2','🚗'));
     const span = el('span','js-commute-val', cell.getAttribute('data-location') ? '…' : '—');
     cell.appendChild(span);
@@ -584,7 +607,7 @@
     try{
       const cfg = await (await fetch('/calendar/config',{cache:'no-store'})).json();
       const colorsById = {}; (cfg.calendars||[]).forEach(c=>colorsById[c.id]=c.color || 'hsl(210 80% 60%)');
-      const min = todayISO(), max = untilISO(7);
+    const min = todayISO(), max = untilISO(14);
       const rs = await fetch('/calendar/events?time_min='+encodeURIComponent(min)+'&time_max='+encodeURIComponent(max), {cache:'no-store'});
       if (!rs.ok) throw new Error('HTTP '+rs.status);
       const data = await rs.json();
@@ -732,6 +755,18 @@
     loadCal();
     loadIcons();
   }
+
+  document.getElementById('main-action-btn').onclick = () => {
+    const say = prompt("Commande vocale (ex: 'allume les lumières', 'prochain évènement')");
+    if (say) {
+        fetch('/voice/command', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: say})
+        }).then(r => r.json()).then(d => alert(d.message || (d.ok ? 'OK' : 'Erreur')));
+    }
+  };
+
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', boot, {once:true});
   } else {

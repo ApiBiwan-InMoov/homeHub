@@ -4,9 +4,9 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from typing import Any, TypedDict
+from typing import Any, TypedDict, Optional
 
-RULES_FILE = os.environ.get("HH_RULES_FILE", "data/rules.json")
+RULES_FILE = os.environ.get("HH_RULES_FILE", "app/data/rules.json")
 
 
 class RuleTD(TypedDict, total=False):

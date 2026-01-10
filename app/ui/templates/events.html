@@ -157,7 +157,7 @@ function rangeText(startISO, endISO, allDay){
     function getCalName(ev){ var org = ev && ev.organizer || {}; return ev.calendarName || org.displayName || org.email || ev.calendarId || 'Default'; }
     function extractLocationText(ev){
       var val = ev && ev.location;
-      if (typeof val === 'string') return val;
+      if (typeof val === 'string' && val.trim()) return val;
       if (val && typeof val === 'object' && !Array.isArray(val)) {
         var ks=['displayName','name','address','formatted','query','title','description'];
         for (var i=0;i<ks.length;i++){ var v=val[ks[i]]; if (typeof v==='string' && v.trim()) return v; }
@@ -173,6 +173,11 @@ function rangeText(startISO, endISO, allDay){
             for (var m=0;m<ks2.length;m++){ var x=val[k][ks2[m]]; if (typeof x==='string' && x.trim()) return x; }
           }
         }
+      }
+      // Fallback to description (matching Python logic)
+      var desc = ev && ev.description;
+      if (typeof desc === 'string' && desc.trim()){
+        return desc.replace(/<[^>]+>/g, ' ');
       }
       return '';
     }
@@ -240,6 +245,7 @@ function rangeText(startISO, endISO, allDay){
     document.getElementById('btnRefresh').onclick = function(){ render(); };
     document.getElementById('btnPrev').onclick = function(){ page -= 1; updateRangeLabel(); render(); };
     document.getElementById('btnNext').onclick = function(){ page += 1; updateRangeLabel(); render(); };
+    document.getElementById('btnPrev').parentNode.style.display = 'flex'; // Ensure flex for buttons
 
     function loadHomeInfo(){
       return fetch('/calendar/drive-config', {cache:'no-store'})
@@ -305,9 +311,16 @@ function rangeText(startISO, endISO, allDay){
         var chip = ent.target;
         var loc = chip.getAttribute('data-location');
         var at  = chip.getAttribute('data-at');
-        if (!loc){ chip.querySelector('.js-commute-val').textContent = '—'; return; }
-        var key = keyFor(loc, at);
+        var drive_mins = chip.getAttribute('data-drive-minutes');
         var span = chip.querySelector('.js-commute-val');
+
+        if (drive_mins !== null && drive_mins !== '' && drive_mins !== 'null') {
+          span.textContent = drive_mins + ' min';
+          return;
+        }
+
+        if (!loc){ span.textContent = '—'; return; }
+        var key = keyFor(loc, at);
         if (commuteCache.has(key)){
           var v = commuteCache.get(key);
           span.textContent = (v!=null ? (v+' min') : '—');
@@ -339,6 +352,9 @@ function rangeText(startISO, endISO, allDay){
       var startISO = getStart(ev);
       cell.setAttribute('data-location', locTxt || '');
       cell.setAttribute('data-at', startISO || '');
+      
+      var dm = ev.drive_minutes || ev.trip_minutes;
+      if (dm != null) cell.setAttribute('data-drive-minutes', dm);
 
       io.observe(cell);
       return cell;
@@ -524,4 +540,3 @@ function rangeText(startISO, endISO, allDay){
 })();
 </script>
 {% endblock %}
-fhelpppp

@@ -7,10 +7,10 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Optional
 
-_DATA = "data/timers.json"
-os.makedirs("data", exist_ok=True)
+_DATA = "app/data/timers.json"
+os.makedirs("app/data", exist_ok=True)
 
 
 @dataclass

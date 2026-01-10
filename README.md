@@ -2,7 +2,17 @@
 
 A small FastAPI-based home management system controlling an **IPX800 v3** for heating and lighting, with a touch-friendly web UI, offline voice commands (Vosk), and Google Calendar to display the next event.
 
-## Quick start (dev)
+## Quick start (Docker)
+
+```bash
+cp .env.example .env
+# Fill in .env
+docker compose up --build
+```
+
+Visit http://localhost:8080
+
+## Quick start (Manual dev)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -21,6 +31,13 @@ Place your OAuth client secrets at `secrets/client_secret.json`. First run promp
 ## IPX800 v3
 Endpoints may vary by firmware. Adjust `app/ipx800/client.py` `set_relay` / `read_relay` as needed.
 
-## Deployment (Raspberry Pi)
+## Deployment
+
+The easiest way to deploy is using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+Alternatively, for a traditional installation on a Raspberry Pi:
 Create a venv, install requirements, then use the provided systemd unit in `deploy/homehub.service`.
-# homeHub

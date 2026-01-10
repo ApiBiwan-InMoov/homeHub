@@ -1,11 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr" class="dark">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>{% block title %}HomeHub{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                850: '#151c2c',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="/static/app.css" />
+    <style>
+      body { background-color: #0f172a; color: #f8fafc; }
+      .radiator-menu {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid #334155;
+      }
+      .menu-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+        text-decoration: none;
+        color: #94a3b8;
+        transition: color 0.2s;
+      }
+      .menu-item:hover, .menu-item.active { color: #f8fafc; }
+      .menu-icon { font-size: 1.5rem; }
+      .menu-label { font-size: 0.75rem; font-weight: 500; }
+    </style>
     {% block head_extra %}{% endblock %}
   </head>
-  <body>
-    {% block content %}{% endblock %}
+  <body class="min-h-screen">
+    <nav class="radiator-menu">
+      <a href="/" class="menu-item">
+        <span class="menu-icon">🏠</span>
+        <span class="menu-label">Accueil</span>
+      </a>
+      <a href="/calendar/ui" class="menu-item">
+        <span class="menu-icon">📅</span>
+        <span class="menu-label">Agenda</span>
+      </a>
+      <a href="/weather" class="menu-item">
+        <span class="menu-icon">☀️</span>
+        <span class="menu-label">Météo</span>
+      </a>
+      <a href="/ipx" class="menu-item">
+        <span class="menu-icon">⚡</span>
+        <span class="menu-label">Élec</span>
+      </a>
+      <a href="/health/ui" class="menu-item">
+        <span class="menu-icon">🛠️</span>
+        <span class="menu-label">Santé</span>
+      </a>
+    </nav>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="mt-12 pb-8 text-center text-slate-500 text-sm">
+      <a href="/sitemap" class="hover:text-slate-300">Plan du site</a>
+    </footer>
   </body>
 </html>

@@ -3,7 +3,7 @@ import json
 import os
 
 
-DATA_DIR = "data"
+DATA_DIR = "app/data"
 NAMES_FILE = os.path.join(DATA_DIR, "relay_names.json")
 
 

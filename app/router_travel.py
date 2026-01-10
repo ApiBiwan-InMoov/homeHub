@@ -5,10 +5,12 @@ import math
 import os
 import re
 import time
-
+from typing import Optional
 
 import requests
 from fastapi import APIRouter, HTTPException, Query
+from .config import settings
+from .services.travel_providers import google_geocode, google_distance_matrix
 
 router = APIRouter(prefix="/calendar", tags=["calendar-travel"])
 
@@ -68,11 +70,40 @@ def _country_code() -> str:
 
 
 def _normalize_addr(q: str) -> str:
-    q = re.sub(r"\s+", " ", (q or "").strip())
-    # If pattern "City ... ZIP CITY", collapse duplicate city
+    # 1. Handle multi-line addresses (common in calendar)
+    # Filter lines to find the best candidate for an address
+    lines = [line.strip() for line in q.splitlines() if line.strip()]
+    if len(lines) > 1:
+        # Candidate line: must contain at least one digit (likely street number or zip)
+        # We prefer lines that aren't too short and contain digits.
+        # Search from bottom to top, skipping lines that look like just icons or short metadata.
+        candidates = [l for l in lines if any(c.isdigit() for c in l)]
+        if candidates:
+            # Better candidate: contains a 4-digit number (likely BE zip code)
+            be_zip_candidates = [l for l in candidates if re.search(r"\b\d{4}\b", l)]
+            if be_zip_candidates:
+                q = be_zip_candidates[0]
+            else:
+                # Usually the address is the last line containing digits
+                q = candidates[-1]
+        else:
+            q = " ".join(lines)
+    
+    # 2. Basic cleanup
+    q = re.sub(r"^[·\s\-\u2022]+", "", q) # remove leading bullets/dashes
+    q = re.sub(r"\s+", " ", q.strip())
+
+    # 3. If pattern "City ... ZIP CITY", collapse duplicate city
     parts = q.split(" ")
-    if parts and parts[0].isalpha() and parts[-1].isalpha() and parts[0].lower() == parts[-1].lower():
+    if len(parts) > 2 and parts[0].isalpha() and parts[-1].isalpha() and parts[0].lower() == parts[-1].lower():
         q = " ".join(parts[1:])  # drop leading city
+    
+    # 4. If address starts with "City Venue Street", and venue name is same as city, it's often better to drop it
+    # But wait, step 3 already does some of this.
+    
+    # 5. Handle "Venue - Street" or "Venue : Street"
+    q = re.sub(r"^[^:\-]+[:\-]\s*", "", q)
+    
     return q
 
 
@@ -125,6 +156,13 @@ def _geocode(q: str) -> Optional[tuple[float, float]]:
     if c:
         return (c[0], c[1])
 
+    # Try Google Maps if available
+    if settings.google_maps_api_key:
+        res = google_geocode(qs, settings.google_maps_api_key)
+        if res:
+            _geo_cache[qs] = (res[0], res[1], _now())
+            return res
+
     country = _country_code()
     lat0, lon0 = None, None
     try:
@@ -155,11 +193,29 @@ def _geocode(q: str) -> Optional[tuple[float, float]]:
         zipc = m.group(1)
         # Try to move "zip city" to the end
         # e.g. "Rue Volta 18 1050 Ixelles" -> "Rue Volta 18, 1050 Ixelles, Belgium"
-        city_tail = norm.split(zipc, 1)[1].strip()
-        city_tail = re.sub(r"^\s+", "", city_tail)
-        alt = norm.split(zipc, 1)[0].strip()
-        altq = f"{alt}, {zipc} {city_tail}"
-        trials.append({"q": _format_be(altq), "format": "json", "limit": 1, "countrycodes": country})
+        parts_zip = norm.split(zipc, 1)
+        if len(parts_zip) > 1:
+            city_tail = parts_zip[1].strip()
+            city_tail = re.sub(r"^\s+", "", city_tail)
+            alt = parts_zip[0].strip()
+            altq = f"{alt}, {zipc} {city_tail}"
+            trials.append({"q": _format_be(altq), "format": "json", "limit": 1, "countrycodes": country})
+
+    # T4: Strip leading word if it looks like a venue name (e.g. "Leopold Avenue ...")
+    # if the string has at least 3 words and the first word doesn't have a digit
+    parts_norm = norm.split(" ")
+    if len(parts_norm) >= 3 and not any(c.isdigit() for c in parts_norm[0]):
+        # Try stripping first word
+        alt_strip = " ".join(parts_norm[1:])
+        trials.append({"q": _format_be(alt_strip), "format": "json", "limit": 1, "countrycodes": country})
+
+    # T5: Strip everything before known Belgian address keywords if they appear later
+    keywords = r"\b(rue|avenue|drève|chaussée|boulevard|place|square|laan|straat|steenweg|plein|dreef|hof|pad|weg|lei|kaai|vest|gracht|dok|singel|rij|park|laan)\b"
+    m_kw = re.search(keywords, norm, re.IGNORECASE)
+    if m_kw and m_kw.start() > 0:
+        alt_kw = norm[m_kw.start():].strip()
+        if alt_kw:
+            trials.append({"q": _format_be(alt_kw), "format": "json", "limit": 1, "countrycodes": country})
 
     # Execute trials
     for p in trials:
@@ -175,6 +231,14 @@ def _osrm_minutes(fr_lat: float, fr_lon: float, to_lat: float, to_lon: float) ->
     c = _cache_get(_route_cache, key)
     if c:
         return c[0]
+
+    # Try Google Distance Matrix if available
+    if settings.google_maps_api_key:
+        mins = google_distance_matrix(fr_lat, fr_lon, to_lat, to_lon, settings.google_maps_api_key)
+        if mins is not None:
+            _route_cache[key] = (mins, _now())
+            return mins
+
     try:
         url = f"https://router.project-osrm.org/route/v1/driving/{fr_lon},{fr_lat};{to_lon},{to_lat}"
         r = requests.get(url, params={"overview": "false"}, headers=UA, timeout=8)
@@ -222,7 +286,7 @@ def drive_time(
         "minutes": mins,
         "from": {"lat": fr[0], "lon": fr[1]},
         "to": {"lat": to_coords[0], "lon": to_coords[1]},
-        "source": "osrm",
+        "source": "google" if settings.google_maps_api_key else "osrm",
     }
 
 

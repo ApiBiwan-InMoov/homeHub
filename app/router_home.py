@@ -18,6 +18,11 @@ def home_ui(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
 
 
+@router.get("/sitemap", response_class=HTMLResponse)
+def sitemap_ui(request: Request):
+    return templates.TemplateResponse("sitemap.html", {"request": request})
+
+
 @router.get("/dashboard/layout")
 def get_layout():
     return {"items": load_layout()}

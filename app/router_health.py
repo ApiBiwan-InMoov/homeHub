@@ -7,7 +7,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from requests.exceptions import RequestException
 
+from .config import settings
 from .deps import get_calendar, get_ipx
+from .services.travel_providers import google_geocode
 
 router = APIRouter(prefix="/health", tags=["health"])
 templates = Jinja2Templates(directory="app/ui/templates")
@@ -54,6 +56,19 @@ def check_weather() -> dict:
         return {"ok": False, "detail": str(e)}
 
 
+def check_google_maps() -> dict:
+    if not settings.google_maps_api_key:
+        return {"ok": True, "detail": "Not configured (using OSRM/Nominatim)"}
+    try:
+        # Minimal geocoding check for a known place
+        res = google_geocode("Brussels", settings.google_maps_api_key)
+        if res:
+            return {"ok": True, "detail": f"Google Geocoding OK: {res[0]},{res[1]}"}
+        return {"ok": False, "detail": "Google Geocoding failed to return results"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "detail": f"Google Geocoding error: {e}"}
+
+
 # ---------- Routes ----------
 
 
@@ -62,8 +77,9 @@ def health():
     g = check_google()
     i = check_ipx_safe()
     w = check_weather()
-    overall = bool(g.get("ok") and i.get("ok") and w.get("ok"))
-    return {"ok": overall, "checks": {"google": g, "ipx": i, "weather": w}}
+    m = check_google_maps()
+    overall = bool(g.get("ok") and i.get("ok") and w.get("ok") and m.get("ok"))
+    return {"ok": overall, "checks": {"google": g, "ipx": i, "weather": w, "google_maps": m}}
 
 
 @router.get("/ui", response_class=HTMLResponse, summary="Health status (UI)")
@@ -72,12 +88,13 @@ def health_ui(request: Request):
     g = check_google()
     i = check_ipx_safe()
     w = check_weather()
-    overall = bool(g.get("ok") and i.get("ok") and w.get("ok"))
+    m = check_google_maps()
+    overall = bool(g.get("ok") and i.get("ok") and w.get("ok") and m.get("ok"))
     return templates.TemplateResponse(
         "health.html",
         {
             "request": request,
-            "checks": {"google": g, "ipx": i, "weather": w},
+            "checks": {"google": g, "ipx": i, "weather": w, "google_maps": m},
             "overall": overall,
         },
     )

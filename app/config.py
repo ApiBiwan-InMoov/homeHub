@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     google_calendar_id: str = ""
     google_oauth_client_secrets: str = "secrets/client_secret.json"
     google_token_file: str = "secrets/token.json"
+    google_oauth_redirect_uri: str | None = None
+    calendar_prefs_path: str = "app/data/calendars.json"
+
+    # ---- Google Maps ----
+    google_maps_api_key: str | None = None
 
     # Pydantic v2 configuration
     if _HAS_SETTINGS_V2 and SettingsConfigDict is not None:
@@ -89,6 +94,9 @@ _ENV_MAP: dict[str, str] = {
     "GOOGLE_CALENDAR_ID": "google_calendar_id",
     "GOOGLE_OAUTH_CLIENT_SECRETS": "google_oauth_client_secrets",
     "GOOGLE_TOKEN_FILE": "google_token_file",
+    "GOOGLE_OAUTH_REDIRECT_URI": "google_oauth_redirect_uri",
+    "CALENDAR_PREFS_PATH": "calendar_prefs_path",
+    "GOOGLE_MAPS_API_KEY": "google_maps_api_key",
 }
 
 

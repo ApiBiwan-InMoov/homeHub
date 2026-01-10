@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-PATH = Path("data/dashboard.json")
+PATH = Path("app/data/dashboard.json")
 
 _DEFAULT: list[dict[str, Any]] = [
     {"type": "digital", "index": 0, "label": "B0", "icon": "🔔"},

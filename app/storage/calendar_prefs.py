@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Optional
+from ..config import settings
 
-PREFS_PATH = os.environ.get("CALENDAR_PREFS_PATH", "data/calendars.json")
+PREFS_PATH = os.environ.get("CALENDAR_PREFS_PATH", settings.calendar_prefs_path)
 
 DEFAULT: dict[str, Any] = {"calendars": []}
 # each item: {id, summary, accessRole, primary, enabled, mode}  # mode: "ro" | "rw"

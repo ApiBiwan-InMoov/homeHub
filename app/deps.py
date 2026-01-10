@@ -6,7 +6,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from importlib import import_module
-from typing import Any
+from typing import Any, Optional
 
 # ---------------------- Google Calendar ----------------------
 from google.auth.transport.requests import Request
@@ -41,7 +41,7 @@ def get_ipx():
 
         # Build kwargs safely based on the constructor signature
         try:
-            sig = inspect.signature(IPXClass)
+            sig = inspect.signature(ipx_class)
             params = sig.parameters.keys()
         except (TypeError, ValueError):
             params = ()
@@ -114,8 +114,12 @@ class GoogleCalendar:
                     creds = None
 
             if not creds or not creds.valid:
-                flow = InstalledAppFlow.from_client_secrets_file(self.client_secret_path, self.scopes)
-                creds = flow.run_local_server(port=0)
+                # In Docker/headless environments, run_local_server() fails.
+                # We raise a clear error so the UI can redirect the user to the web flow.
+                raise RuntimeError(
+                    "Google Calendar credentials missing or expired. "
+                    "Please visit /calendar/oauth/start to authorize."
+                )
 
             # Save the credentials for the next run
             os.makedirs(os.path.dirname(self.token_path), exist_ok=True)

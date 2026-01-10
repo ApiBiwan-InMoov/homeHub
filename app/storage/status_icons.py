@@ -6,7 +6,7 @@ import os
 import uuid
 from typing import Any
 
-DATA_DIR = "data"
+DATA_DIR = "app/data"
 CONFIG_PATH = os.path.join(DATA_DIR, "status_icons.json")
 
 

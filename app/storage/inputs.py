@@ -3,7 +3,7 @@ import json
 import os
 
 
-DATA_DIR = "data"
+DATA_DIR = "app/data"
 BTN_FILE = os.path.join(DATA_DIR, "input_names.json")
 AN_FILE = os.path.join(DATA_DIR, "analog_names.json")
 

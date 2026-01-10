@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import logging
 import time
-fimport json
+import json
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -26,13 +27,11 @@ from .utils.datetime import parse_iso_naive
 
 # ---- travel helpers (already cached inside router_travel) --------------------
 try:
-    from fastapi import APIRouter, Request, HTTPException
-    from fastapi.responses import HTMLResponse, RedirectResponse
     from .router_travel import _geocode as _rt_geocode
     from .router_travel import _home_coords as _rt_home_coords
     from .router_travel import _osrm_minutes as _rt_osrm_minutes
-
-except Exception:
+except Exception as e:
+    logging.getLogger("uvicorn.error").error("Failed to import travel helpers in router_calendar: %s", e)
     _rt_geocode = None
     _rt_osrm_minutes = None
     _rt_home_coords = None
@@ -51,8 +50,8 @@ _COMMUTE_TTL = 60 * 60  # 1 hour
 log = logging.getLogger("uvicorn.error")
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 DATA_DIR = Path("app/data")
-CREDS_PATH = Path("secrets/client_secret.json")   # <- consistent with your setup
-TOKEN_PATH = DATA_DIR / "google_token.json"
+CREDS_PATH = Path(settings.google_oauth_client_secrets)
+TOKEN_PATH = Path(settings.google_token_file)
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 templates = Jinja2Templates(directory="app/ui/templates")
@@ -64,12 +63,12 @@ templates = Jinja2Templates(directory="app/ui/templates")
 def _client_config() -> dict:
     """
     Load the Google OAuth client config for an Installed App.
-    Expecting: secrets/client_secret.json (downloaded from Google Cloud console).
+    Expecting: client_secret.json (downloaded from Google Cloud console).
     """
-    p = Path("secrets/client_secret.json")
+    p = Path(settings.google_oauth_client_secrets)
     if not p.exists():
         # Make the error clear in logs/HTTP response
-        raise RuntimeError("secrets/client_secret.json is missing")
+        raise RuntimeError(f"{settings.google_oauth_client_secrets} is missing")
     return json.loads(p.read_text(encoding="utf-8"))
 
 def _iso_with_tz(s: str | None, tz_name: str) -> str | None:
@@ -194,8 +193,9 @@ def _parse_dt_loose(s: str | None) -> datetime | None:
 
 
 def _extract_location_text(ev: dict[str, Any]) -> str:
+    # 1. Try explicit location field
     val = ev.get("location")
-    if isinstance(val, str):
+    if isinstance(val, str) and val.strip():
         return val
     if isinstance(val, dict):
         for key in ("displayName", "name", "address", "formatted", "query", "title", "description"):
@@ -217,6 +217,14 @@ def _extract_location_text(ev: dict[str, Any]) -> str:
                     v = item.get(key)
                     if isinstance(v, str) and v.strip():
                         return v
+    
+    # 2. Fallback to description (often contains address when location is empty)
+    desc = ev.get("description")
+    if isinstance(desc, str) and desc.strip():
+        # Clean HTML if present (common in Google Calendar descriptions)
+        desc = re.sub(r"<[^>]+>", " ", desc)
+        return desc
+
     return ""
 
 
@@ -615,11 +623,22 @@ def delete_event(event_id: str, calendarId: str, cal=Depends(get_calendar)):
         raise HTTPException(500, f"delete_event failed: {e}")
 
 
+def _get_redirect_uri(request: Request) -> str:
+    if settings.google_oauth_redirect_uri:
+        return settings.google_oauth_redirect_uri
+    
+    base = str(request.base_url).rstrip("/")
+    # If the app is accessed via 0.0.0.0, Google will reject it.
+    # Fallback to localhost if we detect 0.0.0.0
+    if "0.0.0.0" in base:
+        base = base.replace("0.0.0.0", "127.0.0.1")
+        
+    return f"{base}/calendar/oauth/callback"
+
 @router.get("/oauth/start", response_class=HTMLResponse)
 async def calendar_oauth_start(request: Request):
     try:
-        base = str(request.base_url).rstrip("/")
-        redirect_uri = f"{base}/calendar/oauth/callback"
+        redirect_uri = _get_redirect_uri(request)
         flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=redirect_uri)
         auth_url, state = flow.authorization_url(
             access_type="offline", include_granted_scopes="true", prompt="consent"
@@ -631,20 +650,75 @@ async def calendar_oauth_start(request: Request):
         raise HTTPException(status_code=500, detail=f"OAuth start failed: {e}")
 
 @router.get("/oauth/callback", response_class=HTMLResponse)
-async def calendar_oauth_callback(request: Request, state: str | None = None):
+async def calendar_oauth_callback(request: Request, state: str | None = None, code: str | None = None, full_url: str | None = None):
     try:
-        saved = (DATA_DIR / "oauth_state.txt").read_text(encoding="utf-8").strip()
-        if not state or state != saved:
-            raise RuntimeError("State mismatch")
-        base = str(request.base_url).rstrip("/")
-        redirect_uri = f"{base}/calendar/oauth/callback"
-        flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=redirect_uri)
-        flow.fetch_token(authorization_response=str(request.url))
+        # 1. Handle full URL paste (e.g. from a failed redirect to 127.0.0.1)
+        if full_url:
+            from urllib.parse import parse_qs, urlparse
+            parsed = urlparse(full_url)
+            qs = parse_qs(parsed.query)
+            code = qs.get("code", [None])[0]
+            state = qs.get("state", [None])[0]
+
+        # 2. Handle manual code entry
+        if code and not state:
+            # Skip state check for manual fallback
+            pass
+        else:
+            saved = (DATA_DIR / "oauth_state.txt").read_text(encoding="utf-8").strip()
+            if not state or state != saved:
+                raise RuntimeError("State mismatch (l'état ne correspond pas)")
+
+        redirect_uri = _get_redirect_uri(request)
+        
+        # If the user is doing a manual fallback, we might need to try common redirect URIs 
+        # that they might have configured in Google Console
+        configs_to_try = [redirect_uri, "http://127.0.0.1:8080/calendar/oauth/callback", "http://localhost:8080/calendar/oauth/callback"]
+        
+        last_err = None
+        flow = None
+        for r_uri in configs_to_try:
+            try:
+                flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=r_uri)
+                if code:
+                    flow.fetch_token(code=code)
+                else:
+                    flow.fetch_token(authorization_response=str(request.url))
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                continue
+        
+        if last_err:
+            raise last_err
+
         creds = flow.credentials
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         with TOKEN_PATH.open("w", encoding="utf-8") as f:
             f.write(creds.to_json())
-        return HTMLResponse("<h3>Google Calendar connected ✅</h3><p>You can close this tab.</p>")
+        return HTMLResponse("<h3>Google Calendar connecté avec succès ✅</h3><p>Vous pouvez fermer cet onglet.</p>")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OAuth callback failed: {e}")
+        err_msg = str(e)
+        return HTMLResponse(f"""
+            <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; line-height: 1.5;">
+                <h3 style="color: #ef4444;">Erreur OAuth</h3>
+                <p style="background: #fee2e2; padding: 10px; border-radius: 4px;">{err_msg}</p>
+                <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
+                
+                <h4>Solution : Utiliser 127.0.0.1</h4>
+                <p>Google n'autorise pas les adresses IP privées (ex: 192.168.x.x) pour les "Applications Web".</p>
+                <ol>
+                    <li>Dans la console Google, utilisez <code>http://127.0.0.1:8080/calendar/oauth/callback</code> comme URI de redirection.</li>
+                    <li>Lancez l'authentification normalement.</li>
+                    <li>Si la redirection finale vers 127.0.0.1 échoue dans votre navigateur, <b>copiez l'URL complète de la page d'erreur</b> et collez-la ci-dessous :</li>
+                </ol>
+
+                <form action="/calendar/oauth/callback" method="GET" style="margin-top: 20px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 5px;">URL complète ou Code d'autorisation :</label>
+                    <input type="text" name="full_url" placeholder="Collez l'URL ici (ex: http://127.0.0.1:8080/calendar/oauth/callback?code=...)" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 4px;"/>
+                    <button type="submit" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Valider manuellement</button>
+                </form>
+            </div>
+        """)
 
