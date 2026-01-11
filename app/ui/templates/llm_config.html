@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}LLM · Configuration{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-6">
+  <header class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold">Agent LLM local</h1>
+      <p class="text-sm opacity-70">Vérifiez l’état du modèle local (French-friendly), testé pour MCP.</p>
+    </div>
+    <button id="btn-refresh" class="px-3 py-1 rounded bg-slate-700">Rafraîchir</button>
+  </header>
+
+  <div id="alert" class="hidden rounded border border-amber-600 bg-amber-600/10 p-3 text-sm"></div>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold">Statut</h2>
+      <code id="llm-status" class="text-xs opacity-80">chargement…</code>
+    </div>
+    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+      <div><dt class="opacity-60">Provider</dt><dd id="llm-provider" class="font-semibold">—</dd></div>
+      <div><dt class="opacity-60">Modèle</dt><dd id="llm-model" class="font-semibold">—</dd></div>
+      <div><dt class="opacity-60">URL</dt><dd id="llm-url" class="font-mono text-xs">—</dd></div>
+      <div><dt class="opacity-60">Recommandé</dt><dd id="llm-reco" class="font-semibold">mistral</dd></div>
+    </dl>
+    <div id="llm-extra" class="text-xs opacity-70"></div>
+  </section>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="text-lg font-semibold">Test rapide</h2>
+      <div class="text-xs opacity-70">Envoie un prompt court (non-streaming).</div>
+    </div>
+    <textarea id="prompt" class="w-full rounded bg-slate-800 border border-slate-700 p-2 text-sm" rows="3" placeholder="Ex: Donne-moi un conseil météo pour aujourd’hui."></textarea>
+    <div class="flex gap-2 justify-end">
+      <input id="max-tokens" type="number" min="16" max="512" value="128" class="w-24 rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm" />
+      <button id="btn-send" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500">Envoyer</button>
+    </div>
+    <pre id="llm-output" class="text-sm bg-slate-950/70 rounded p-3 border border-slate-800 whitespace-pre-wrap">—</pre>
+  </section>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-2 text-sm">
+    <h2 class="text-lg font-semibold">Intégration MCP</h2>
+    <div>Manifest: <code class="text-xs">/llm/mcp/manifest</code></div>
+    <div>Endpoints: <code class="text-xs">/llm/info</code>, <code class="text-xs">/llm/health</code>, <code class="text-xs">/llm/generate</code></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const $status = document.getElementById('llm-status');
+  const $prov = document.getElementById('llm-provider');
+  const $model = document.getElementById('llm-model');
+  const $url = document.getElementById('llm-url');
+  const $reco = document.getElementById('llm-reco');
+  const $extra = document.getElementById('llm-extra');
+  const $alert = document.getElementById('alert');
+  const $prompt = document.getElementById('prompt');
+  const $out = document.getElementById('llm-output');
+  const $maxTok = document.getElementById('max-tokens');
+
+  function showAlert(txt){
+    if (!txt){ $alert.classList.add('hidden'); return; }
+    $alert.textContent = txt;
+    $alert.classList.remove('hidden');
+  }
+
+  async function loadInfo(){
+    showAlert('');
+    $status.textContent = 'chargement…';
+    try{
+      const r = await fetch('/llm/info?check=true');
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      $prov.textContent = j.provider || '—';
+      $model.textContent = j.model || '—';
+      $url.textContent = j.base_url || 'voir .env';
+      $reco.textContent = j.recommended_model || 'mistral';
+      $status.textContent = j.status || (j.configured ? 'configuré' : 'désactivé');
+      const parts = [];
+      if (j.health && j.health.models) parts.push('Modèles: '+(j.health.models.join(', ') || '—'));
+      if (j.error) parts.push('Erreur: '+j.error);
+      if (j.warning) parts.push('Alerte: '+j.warning);
+      if (!j.configured) parts.push('LLM_PROVIDER est désactivé.');
+      $extra.textContent = parts.join(' · ');
+    }catch(e){
+      $status.textContent = 'erreur';
+      showAlert('Impossible de charger le statut LLM.');
+    }
+  }
+
+  async function sendPrompt(){
+    const prompt = ($prompt.value || '').trim();
+    if (!prompt){ showAlert('Entrez un prompt.'); return; }
+    showAlert('');
+    $out.textContent = 'Envoi…';
+    try{
+      const r = await fetch('/llm/generate', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ prompt, max_tokens: Number($maxTok.value)||128 })
+      });
+      if (!r.ok){
+        const txt = await r.text();
+        throw new Error('HTTP '+r.status+' '+txt);
+      }
+      const j = await r.json();
+      $out.textContent = j.text || JSON.stringify(j, null, 2);
+    }catch(e){
+      $out.textContent = 'Erreur: '+e.message;
+      showAlert('Échec de la génération (LLM indisponible ?).');
+    }
+  }
+
+  document.getElementById('btn-refresh').onclick = loadInfo;
+  document.getElementById('btn-send').onclick = sendPrompt;
+
+  loadInfo();
+})();
+</script>
+{% endblock %}

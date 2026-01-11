@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Logs · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-6">
+  <header class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Journal</h1>
+  </header>
+
+  <div id="logErr" class="hidden rounded border border-amber-600 bg-amber-600/10 p-3 text-sm"></div>
+
+  <div class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Filtre texte</div>
+        <input id="filterText" type="text" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" placeholder="Rechercher" />
+      </label>
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Type</div>
+        <select id="filterType" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+          <option value="">Tous</option>
+        </select>
+      </label>
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Limite</div>
+        <select id="filterLimit" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1">
+          <option value="100">100</option>
+          <option value="200" selected>200</option>
+          <option value="400">400</option>
+          <option value="800">800</option>
+        </select>
+      </label>
+      <div class="flex items-end gap-2 justify-end">
+        <button id="btnRefresh" class="px-3 py-1 rounded bg-slate-700">Rafraîchir</button>
+        <button id="btnClear" class="px-3 py-1 rounded bg-amber-700">Effacer</button>
+      </div>
+    </div>
+    <div id="logStats" class="text-xs opacity-70">Chargement…</div>
+  </div>
+
+  <div class="overflow-x-auto rounded border border-slate-800 bg-slate-900/60">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-800/60 text-xs uppercase tracking-wide">
+        <tr>
+          <th class="px-3 py-2 text-left">Horodatage</th>
+          <th class="px-3 py-2 text-left">Type</th>
+          <th class="px-3 py-2 text-left">Détails</th>
+        </tr>
+      </thead>
+      <tbody id="logBody"></tbody>
+    </table>
+    <div id="logEmpty" class="hidden px-4 py-6 text-sm opacity-70">Aucun log.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $err = document.getElementById('logErr');
+  var $btnRefresh = document.getElementById('btnRefresh');
+  var $btnClear = document.getElementById('btnClear');
+  var $filterText = document.getElementById('filterText');
+  var $filterType = document.getElementById('filterType');
+  var $filterLimit = document.getElementById('filterLimit');
+  var $logBody = document.getElementById('logBody');
+  var $logEmpty = document.getElementById('logEmpty');
+  var $logStats = document.getElementById('logStats');
+
+  var debounceTimer = null;
+
+  function fmtTs(ts){
+    if (ts === undefined || ts === null) return '—';
+    var d = new Date(ts * 1000);
+    if (isNaN(d.getTime())) return String(ts);
+    return d.toLocaleString();
+  }
+
+  function summarize(entry){
+    var clone = {};
+    for (var k in entry){ if (k !== 'ts' && k !== 'type') clone[k] = entry[k]; }
+    var keys = Object.keys(clone);
+    if (!keys.length) return '—';
+    try {
+      return JSON.stringify(clone, null, 2);
+    } catch (e) {
+      return String(clone);
+    }
+  }
+
+  function showErr(msg){
+    $err.textContent = msg;
+    $err.classList.remove('hidden');
+  }
+  function hideErr(){
+    $err.classList.add('hidden');
+  }
+
+  function updateTypes(logs){
+    var current = $filterType.value;
+    var seen = {};
+    logs.forEach(function(entry){
+      if (entry && entry.type){ seen[entry.type] = true; }
+    });
+    var options = [''];
+    for (var t in seen){ options.push(t); }
+    $filterType.innerHTML = '';
+    options.forEach(function(val){
+      var opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val ? val : 'Tous';
+      $filterType.appendChild(opt);
+    });
+    if (current && seen[current]){
+      $filterType.value = current;
+    }
+  }
+
+  function render(logs){
+    $logBody.innerHTML = '';
+    var count = (logs && logs.length) || 0;
+    $logStats.textContent = count ? (count + ' log' + (count > 1 ? 's' : '')) : 'Aucun log';
+
+    if (!count){
+      $logEmpty.classList.remove('hidden');
+      return;
+    }
+    $logEmpty.classList.add('hidden');
+
+    logs.forEach(function(entry){
+      var tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-800/80 hover:bg-slate-800/40';
+
+      var tdTs = document.createElement('td');
+      tdTs.className = 'align-top px-3 py-2 whitespace-nowrap text-xs opacity-80';
+      tdTs.textContent = fmtTs(entry.ts);
+      tr.appendChild(tdTs);
+
+      var tdType = document.createElement('td');
+      tdType.className = 'align-top px-3 py-2 whitespace-nowrap text-xs font-semibold';
+      tdType.textContent = entry.type || '—';
+      tr.appendChild(tdType);
+
+      var tdBody = document.createElement('td');
+      tdBody.className = 'align-top px-3 py-2';
+      var pre = document.createElement('pre');
+      pre.className = 'whitespace-pre-wrap break-words text-xs bg-slate-900/60 border border-slate-800 rounded p-2 max-h-40 overflow-auto';
+      pre.textContent = summarize(entry);
+      tdBody.appendChild(pre);
+      tr.appendChild(tdBody);
+
+      $logBody.appendChild(tr);
+    });
+  }
+
+  function buildQuery(){
+    var params = new URLSearchParams();
+    var lim = parseInt($filterLimit.value || '200', 10) || 200;
+    params.set('limit', lim);
+    var t = $filterType.value;
+    if (t) params.set('type', t);
+    var q = ($filterText.value || '').trim();
+    if (q) params.set('q', q);
+    return params.toString();
+  }
+
+  function load(){
+    hideErr();
+    var qs = buildQuery();
+    fetch('/logs?' + qs, { cache: 'no-store' })
+      .then(function(res){
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(data){
+        var logs = data.logs || [];
+        updateTypes(logs);
+        render(logs);
+      })
+      .catch(function(err){
+        showErr('Erreur: ' + (err && err.message || err));
+      });
+  }
+
+  $btnRefresh.onclick = load;
+  $btnClear.onclick = function(){
+    if (!confirm('Effacer tous les logs ?')) return;
+    hideErr();
+    fetch('/logs', { method: 'DELETE' })
+      .then(function(res){
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+      })
+      .then(load)
+      .catch(function(err){
+        showErr('Erreur: ' + (err && err.message || err));
+      });
+  };
+
+  function scheduleLoad(){
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(load, 200);
+  }
+
+  $filterText.addEventListener('input', scheduleLoad);
+  $filterType.addEventListener('change', load);
+  $filterLimit.addEventListener('change', load);
+
+  load();
+})();
+</script>
+{% endblock %}

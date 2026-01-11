@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block title %}Microphone · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-4 space-y-6">
+  <header class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold">Microphone · Configuration & Test</h1>
+      <p class="text-sm opacity-70">Choisissez le micro utilisé par l'app, visualisez le signal, enregistrez et réécoutez un extrait.</p>
+    </div>
+    <div class="flex gap-2">
+      <button id="btn-refresh-devices" class="px-3 py-1 rounded bg-slate-700">Rafraîchir périphériques</button>
+      <button id="btn-save" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500">Enregistrer</button>
+    </div>
+  </header>
+
+  <div id="msg" class="hidden rounded border border-amber-600 bg-amber-600/10 p-3 text-sm"></div>
+
+  <!-- Configuration -->
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-4">
+    <h2 class="text-lg font-semibold">Configuration du micro</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Micro (serveur)</div>
+        <select id="device" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-2"></select>
+        <div id="device-hint" class="text-xs opacity-60">Liste des entrées audio détectées par le serveur (sounddevice).</div>
+      </label>
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Nom manuel (optionnel)</div>
+        <input id="device-manual" type="text" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-2" placeholder="ex: USB Audio" />
+        <div class="text-xs opacity-60">Utilisé si le micro souhaité n'apparaît pas ci-dessus.</div>
+      </label>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-3">
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Fréquence d'échantillonnage</div>
+        <input id="sample-rate" type="number" min="8000" step="1000" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-2" />
+      </label>
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Canaux</div>
+        <select id="channels" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-2">
+          <option value="1">Mono (1)</option>
+          <option value="2">Stéréo (2)</option>
+        </select>
+      </label>
+      <label class="text-sm space-y-1">
+        <div class="opacity-70">Micro (navigateur)</div>
+        <select id="browser-device" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-2">
+          <option value="">(Demander l'autorisation pour afficher)</option>
+        </select>
+        <div id="browser-hint" class="text-xs opacity-60">Le navigateur peut utiliser un micro différent pour l'aperçu/visu.</div>
+      </label>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-3">
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input id="echo-cancel" type="checkbox" class="rounded" checked />
+        <span>Annulation d'écho</span>
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input id="noise-suppress" type="checkbox" class="rounded" checked />
+        <span>Réduction de bruit</span>
+      </label>
+      <label class="inline-flex items-center gap-2 text-sm">
+        <input id="auto-gain" type="checkbox" class="rounded" checked />
+        <span>Gain auto</span>
+      </label>
+    </div>
+  </section>
+
+  <!-- Visualisation -->
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-lg font-semibold">Aperçu & VU-mètre</h2>
+        <div class="text-xs opacity-70">Démarrez pour voir le niveau instantané du micro sélectionné.</div>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-start" class="px-3 py-1 rounded bg-slate-700">Démarrer l'aperçu</button>
+        <button id="btn-stop" class="px-3 py-1 rounded bg-slate-700">Arrêter</button>
+      </div>
+    </div>
+    <div class="space-y-2">
+      <canvas id="wave" class="w-full rounded bg-slate-800" height="180"></canvas>
+      <div class="w-full h-3 rounded bg-slate-800 overflow-hidden">
+        <div id="vu" class="h-full bg-blue-500" style="width:0%"></div>
+      </div>
+      <div class="text-xs opacity-70" id="vu-label">Niveau: 0%</div>
+    </div>
+  </section>
+
+  <!-- Enregistrement -->
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h2 class="text-lg font-semibold">Enregistrer & réécouter</h2>
+        <div class="text-xs opacity-70">Utilise le micro du navigateur avec les mêmes paramètres pour un test rapide.</div>
+      </div>
+      <div class="flex gap-2">
+        <button id="btn-rec" class="px-3 py-1 rounded bg-amber-600">Enregistrer</button>
+        <button id="btn-rec-stop" class="px-3 py-1 rounded bg-slate-700">Arrêter</button>
+      </div>
+    </div>
+    <div class="space-y-2">
+      <div id="rec-status" class="text-sm opacity-70">Prêt.</div>
+      <audio id="rec-audio" controls class="w-full hidden"></audio>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const $msg = document.getElementById('msg');
+  const $device = document.getElementById('device');
+  const $deviceManual = document.getElementById('device-manual');
+  const $sampleRate = document.getElementById('sample-rate');
+  const $channels = document.getElementById('channels');
+  const $browserDevice = document.getElementById('browser-device');
+  const $deviceHint = document.getElementById('device-hint');
+  const $browserHint = document.getElementById('browser-hint');
+  const $echo = document.getElementById('echo-cancel');
+  const $noise = document.getElementById('noise-suppress');
+  const $gain = document.getElementById('auto-gain');
+  const $vu = document.getElementById('vu');
+  const $vuLabel = document.getElementById('vu-label');
+  const $wave = document.getElementById('wave');
+  const $recStatus = document.getElementById('rec-status');
+  const $recAudio = document.getElementById('rec-audio');
+
+  let state = {
+    cfg: null,
+    devices: [],
+    diag: null,
+    serverInfo: null,
+    browserDevices: [],
+    stream: null,
+    ctx: null,
+    analyser: null,
+    raf: null,
+    mediaRecorder: null,
+    chunks: [],
+  };
+
+  function showMsg(txt){
+    $msg.textContent = txt;
+    $msg.classList.remove('hidden');
+  }
+  function clearMsg(){ $msg.classList.add('hidden'); }
+
+  function renderDevices(){
+    $device.innerHTML = '';
+    const optDefault = document.createElement('option');
+    optDefault.value = '';
+    optDefault.textContent = 'Par défaut (système)';
+    $device.appendChild(optDefault);
+    state.devices.forEach(dev => {
+      const o = document.createElement('option');
+      o.value = String(dev.id);
+      o.textContent = (dev.name || 'Device') + (dev.is_default ? ' (défaut)' : '');
+      $device.appendChild(o);
+    });
+    if (state.cfg && state.cfg.device !== undefined && state.cfg.device !== null) {
+      const v = String(state.cfg.device);
+      const has = Array.from($device.options).some(o => o.value === v);
+      if (has) $device.value = v;
+    }
+
+    if ($deviceHint){
+      if (state.devices.length){
+        $deviceHint.textContent = `Périphériques détectés côté serveur : ${state.devices.length}`;
+        $deviceHint.classList.remove('text-amber-300');
+      } else {
+        let msg = state.diag || "Aucun périphérique détecté côté serveur. Vérifiez ALSA/permissions ou utilisez le micro du navigateur.";
+        const extra = [];
+        const info = state.serverInfo || {};
+        if (info.has_dev_snd === false) extra.push('/dev/snd non monté');
+        if (Array.isArray(info.dev_snd_entries) && info.dev_snd_entries.length) {
+          extra.push('/dev/snd: ' + info.dev_snd_entries.join(', '));
+        }
+        if (Array.isArray(info.hostapis) && info.hostapis.length){
+          extra.push('HostAPI: ' + info.hostapis.map(h => h.name || ('#'+h.index)).join(', '));
+        } else if (info.hostapis_error){
+          extra.push('HostAPI erreur: ' + info.hostapis_error);
+        }
+        if (extra.length) msg += ' (' + extra.join(' · ') + ')';
+        $deviceHint.textContent = msg;
+        $deviceHint.classList.add('text-amber-300');
+      }
+    }
+  }
+
+  function renderBrowserDevices(){
+    $browserDevice.innerHTML = '';
+    if (!state.browserDevices.length){
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = '(Aucun micro listé — autoriser le navigateur)';
+      $browserDevice.appendChild(o);
+      if ($browserHint){
+        $browserHint.textContent = "Autorisez l'accès micro dans le navigateur pour lister les périphériques.";
+        $browserHint.classList.add('text-amber-300');
+      }
+      return;
+    }
+    const o0 = document.createElement('option');
+    o0.value = '';
+    o0.textContent = 'Par défaut navigateur';
+    $browserDevice.appendChild(o0);
+    state.browserDevices.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || '(Micro)';
+      $browserDevice.appendChild(o);
+    });
+    if (state.cfg && state.cfg.browser_device_id){
+      $browserDevice.value = state.cfg.browser_device_id;
+    }
+    if ($browserHint){
+      $browserHint.textContent = 'Périphériques listés par le navigateur.';
+      $browserHint.classList.remove('text-amber-300');
+    }
+  }
+
+  async function loadConfig(){
+    const r = await fetch('/voice/config');
+    const j = await r.json();
+    state.cfg = j.config || {};
+    $sampleRate.value = state.cfg.sample_rate || 16000;
+    $channels.value = state.cfg.channels || 1;
+    $echo.checked = state.cfg.echo_cancellation !== false;
+    $noise.checked = state.cfg.noise_suppression !== false;
+    $gain.checked = state.cfg.auto_gain_control !== false;
+    if (state.cfg.browser_device_id){
+      $browserDevice.value = state.cfg.browser_device_id;
+    }
+    if (state.cfg.browser_label){
+      const o = document.createElement('option');
+      o.value = state.cfg.browser_device_id || '';
+      o.textContent = state.cfg.browser_label;
+      $browserDevice.appendChild(o);
+      $browserDevice.value = o.value;
+    }
+    if (state.cfg.device) {
+      $device.value = String(state.cfg.device);
+      $deviceManual.value = typeof state.cfg.device === 'string' && !$device.value ? state.cfg.device : '';
+    }
+  }
+
+  async function loadDevices(){
+    try{
+      const r = await fetch('/voice/devices');
+      const j = await r.json();
+      state.devices = j.devices || [];
+      state.diag = j.diagnostic || j.error || null;
+      state.serverInfo = j.server_info || null;
+    }catch(e){ state.devices = []; state.diag = 'Impossible de contacter le serveur pour la liste des micros.'; }
+    renderDevices();
+  }
+
+  async function loadBrowserDevices(){
+    if (!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices)) return;
+    try{
+      const list = await navigator.mediaDevices.enumerateDevices();
+      state.browserDevices = list.filter(d => d.kind === 'audioinput');
+      renderBrowserDevices();
+    }catch(e){ /* ignore */ }
+  }
+
+  function collectPayload(){
+    const deviceVal = $device.value || $deviceManual.value || '';
+    return {
+      device: deviceVal || null,
+      sample_rate: Number($sampleRate.value) || 16000,
+      channels: Number($channels.value) || 1,
+      browser_device_id: $browserDevice.value || null,
+      browser_label: ($browserDevice.options[$browserDevice.selectedIndex] || {}).text || null,
+      echo_cancellation: $echo.checked,
+      noise_suppression: $noise.checked,
+      auto_gain_control: $gain.checked,
+    };
+  }
+
+  async function saveConfig(){
+    clearMsg();
+    try{
+      const payload = collectPayload();
+      const r = await fetch('/voice/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      state.cfg = j.config;
+      showMsg('Configuration enregistrée.');
+    }catch(e){
+      showMsg('Erreur lors de l\'enregistrement.');
+    }
+  }
+
+  function stopPreview(){
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = null;
+    if (state.stream){
+      state.stream.getTracks().forEach(t=>t.stop());
+    }
+    state.stream = null;
+    if (state.ctx){ try{ state.ctx.close(); }catch{} }
+    state.ctx = null;
+    state.analyser = null;
+    $vu.style.width = '0%';
+    $vuLabel.textContent = 'Niveau: 0%';
+    const ctx2 = $wave.getContext('2d');
+    ctx2.clearRect(0,0,$wave.width,$wave.height);
+  }
+
+  function draw(){
+    if (!state.analyser) return;
+    const ctx = $wave.getContext('2d');
+    const w = $wave.width;
+    const h = $wave.height;
+    const data = new Uint8Array(state.analyser.fftSize);
+    state.analyser.getByteTimeDomainData(data);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const slice = w / data.length;
+    let sum = 0;
+    for (let i=0;i<data.length;i++){
+      const v = (data[i]-128)/128;
+      const x = i * slice;
+      const y = h/2 + v * (h/2 - 4);
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      sum += v*v;
+    }
+    ctx.stroke();
+    const rms = Math.sqrt(sum / data.length);
+    const level = Math.min(100, Math.round(rms*140));
+    $vu.style.width = level + '%';
+    $vuLabel.textContent = 'Niveau: ' + level + '%';
+    state.raf = requestAnimationFrame(draw);
+  }
+
+  function constraints(){
+    const payload = collectPayload();
+    const audio = {
+      deviceId: payload.browser_device_id || undefined,
+      channelCount: payload.channels || 1,
+      sampleRate: payload.sample_rate || undefined,
+      echoCancellation: payload.echo_cancellation,
+      noiseSuppression: payload.noise_suppression,
+      autoGainControl: payload.auto_gain_control,
+    };
+    return { audio };
+  }
+
+  async function startPreview(){
+    clearMsg();
+    stopPreview();
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia(constraints());
+      state.stream = stream;
+      await loadBrowserDevices();
+      state.ctx = new AudioContext();
+      const src = state.ctx.createMediaStreamSource(stream);
+      state.analyser = state.ctx.createAnalyser();
+      state.analyser.fftSize = 1024;
+      src.connect(state.analyser);
+      draw();
+    }catch(e){
+      showMsg('Impossible de démarrer l\'aperçu (permissions / périphérique).');
+    }
+  }
+
+  async function startRecording(){
+    clearMsg();
+    if (!state.stream){
+      await startPreview();
+    }
+    if (!state.stream){ return; }
+    state.chunks = [];
+    try{
+      state.mediaRecorder = new MediaRecorder(state.stream);
+    }catch(e){
+      showMsg('Enregistrement non supporté dans ce navigateur.');
+      return;
+    }
+    state.mediaRecorder.ondataavailable = ev => { if (ev.data.size>0) state.chunks.push(ev.data); };
+    state.mediaRecorder.onstop = () => {
+      if (!state.chunks.length) return;
+      const blob = new Blob(state.chunks, {type:'audio/webm'});
+      const url = URL.createObjectURL(blob);
+      $recAudio.src = url;
+      $recAudio.classList.remove('hidden');
+      $recStatus.textContent = 'Lecture prête.';
+    };
+    state.mediaRecorder.start();
+    $recStatus.textContent = 'Enregistrement…';
+  }
+
+  function stopRecording(){
+    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive'){
+      state.mediaRecorder.stop();
+      $recStatus.textContent = 'Arrêt en cours…';
+    }
+  }
+
+  // Buttons
+  document.getElementById('btn-save').onclick = saveConfig;
+  document.getElementById('btn-refresh-devices').onclick = () => { loadDevices(); };
+  document.getElementById('btn-start').onclick = startPreview;
+  document.getElementById('btn-stop').onclick = stopPreview;
+  document.getElementById('btn-rec').onclick = startRecording;
+  document.getElementById('btn-rec-stop').onclick = stopRecording;
+
+  // Init
+  loadConfig().then(loadDevices);
+})();
+</script>
+{% endblock %}
