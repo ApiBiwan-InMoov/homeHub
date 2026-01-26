@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}LLM · Manifest{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 space-y-6">
+  <header class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold">Manifest MCP</h1>
+      <p class="text-sm opacity-70">Déclare les outils/fonctions disponibles pour l’agent. Sauvegardé côté serveur.</p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <button id="btn-refresh" class="px-3 py-1 rounded bg-slate-700">Rafraîchir</button>
+      <button id="btn-save" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500">Enregistrer</button>
+      <button id="btn-reset" class="px-3 py-1 rounded bg-slate-700">Valeurs par défaut</button>
+      <button id="btn-apply-tools" class="px-3 py-1 rounded bg-slate-700">Tools par défaut</button>
+      <button id="btn-add-row" class="px-3 py-1 rounded bg-emerald-700">+ Tool</button>
+    </div>
+  </header>
+
+  <div id="alert" class="hidden rounded border border-amber-600 bg-amber-600/10 p-3 text-sm"></div>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <h2 class="text-lg font-semibold">Métadonnées du manifest</h2>
+    <div class="grid md:grid-cols-3 gap-3 text-sm">
+      <label class="space-y-1">
+        <div class="opacity-70">Nom</div>
+        <input id="mf-name" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+      <label class="space-y-1">
+        <div class="opacity-70">Version</div>
+        <input id="mf-version" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+      <label class="space-y-1 md:col-span-3">
+        <div class="opacity-70">Description</div>
+        <input id="mf-desc" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+    </div>
+    <div class="grid md:grid-cols-3 gap-3 text-sm">
+      <label class="space-y-1">
+        <div class="opacity-70">Endpoint info</div>
+        <input id="ep-info" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+      <label class="space-y-1">
+        <div class="opacity-70">Endpoint health</div>
+        <input id="ep-health" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+      <label class="space-y-1">
+        <div class="opacity-70">Endpoint generate</div>
+        <input id="ep-generate" class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1" />
+      </label>
+    </div>
+  </section>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3 text-sm">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="text-lg font-semibold">Tools</h2>
+      <div class="text-xs opacity-70">Éditez chaque entrée (nom, méthode, URL, params JSON, description)</div>
+    </div>
+    <div class="overflow-x-auto border border-slate-800 rounded bg-slate-950/40">
+      <table class="min-w-full text-sm" id="tools-table">
+        <thead class="bg-slate-800/60 text-xs uppercase tracking-wide">
+          <tr>
+            <th class="px-2 py-2 text-left">Nom</th>
+            <th class="px-2 py-2 text-left">Méthode</th>
+            <th class="px-2 py-2 text-left">URL</th>
+            <th class="px-2 py-2 text-left">Params (JSON)</th>
+            <th class="px-2 py-2 text-left">Description</th>
+            <th class="px-2 py-2 text-left"></th>
+          </tr>
+        </thead>
+        <tbody id="tools-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-4 space-y-3 text-sm">
+    <h2 class="text-lg font-semibold">Outils par défaut (lecture seule)</h2>
+    <div class="text-xs opacity-70">Référence rapide des tools suggérés côté backend.</div>
+    <pre id="tools" class="bg-slate-950/70 rounded p-3 border border-slate-800 whitespace-pre-wrap text-xs">Chargement…</pre>
+  </section>
+</div>
+
+<script>
+(function(){
+  const $alert = document.getElementById('alert');
+  const $toolsJson = document.getElementById('tools');
+  const $tbody = document.getElementById('tools-body');
+  const $btnAdd = document.getElementById('btn-add-row');
+
+  const $name = document.getElementById('mf-name');
+  const $version = document.getElementById('mf-version');
+  const $desc = document.getElementById('mf-desc');
+  const $epInfo = document.getElementById('ep-info');
+  const $epHealth = document.getElementById('ep-health');
+  const $epGen = document.getElementById('ep-generate');
+
+  let lastTools = [];
+  let defaults = null;
+
+  function showAlert(msg){
+    if (!msg){ $alert.classList.add('hidden'); return; }
+    $alert.textContent = msg;
+    $alert.classList.remove('hidden');
+  }
+
+  function pretty(obj){
+    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  }
+
+  function renderTools(tools){
+    $tbody.innerHTML = '';
+    tools.forEach((t, idx) => addRow(t));
+    if (!tools.length) addRow({});
+  }
+
+  function addRow(data){
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-slate-800';
+    const esc = (v) => String(v ?? '').replace(/"/g, '&quot;');
+    const opts = ['GET','POST','PUT','PATCH','DELETE'].map(m => {
+      const sel = data.method === m ? ' selected' : '';
+      return `<option value="${m}"${sel}>${m}</option>`;
+    }).join('');
+    const paramVal = data.params ? esc(pretty(data.params)) : '';
+    const row = [
+      '<td class="px-2 py-1"><input class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm tool-name" value="'+esc(data.name||'')+'"></td>',
+      '<td class="px-2 py-1">'+
+        '<select class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm tool-method">'+opts+'</select>'+
+      '</td>',
+      '<td class="px-2 py-1"><input class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm tool-url" value="'+esc(data.url||'')+'"></td>',
+      '<td class="px-2 py-1"><input class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm tool-params" placeholder="{\"relay\":\"int\"}" value="'+paramVal+'"></td>',
+      '<td class="px-2 py-1"><input class="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-sm tool-desc" value="'+esc(data.description||'')+'"></td>',
+      '<td class="px-2 py-1 text-right"><button class="px-2 py-1 rounded bg-slate-700 text-xs btn-del">Suppr</button></td>'
+    ].join('');
+    tr.innerHTML = row;
+    tr.querySelector('.btn-del').onclick = () => {
+      tr.remove();
+      if (!$tbody.children.length) addRow({});
+    };
+    $tbody.appendChild(tr);
+  }
+
+  function readTools(){
+    const rows = Array.from($tbody.children);
+    const out = [];
+    rows.forEach(r => {
+      const name = r.querySelector('.tool-name').value.trim();
+      const method = r.querySelector('.tool-method').value.trim() || 'GET';
+      const url = r.querySelector('.tool-url').value.trim();
+      const paramsTxt = r.querySelector('.tool-params').value.trim();
+      const desc = r.querySelector('.tool-desc').value.trim();
+      if (!name && !url) return;
+      let params = undefined;
+      if (paramsTxt){
+        try{ params = JSON.parse(paramsTxt); }
+        catch(e){ params = paramsTxt; }
+      }
+      const item = { name, method, url, description: desc };
+      if (params !== undefined) item.params = params;
+      out.push(item);
+    });
+    return out;
+  }
+
+  function applyDefaultsToolsOnly(){
+    if (!lastTools.length) return;
+    renderTools(lastTools);
+    showAlert('Tools par défaut appliqués.');
+  }
+
+  function resetManifest(){
+    if (!defaults) return;
+    fillManifest(defaults, lastTools);
+    showAlert('Manifest remis aux valeurs par défaut.');
+  }
+
+  function fillManifest(manifest, availTools){
+    $name.value = manifest.name || '';
+    $version.value = manifest.version || '';
+    $desc.value = manifest.description || '';
+    const eps = manifest.endpoints || {};
+    $epInfo.value = eps.info || '';
+    $epHealth.value = eps.health || '';
+    $epGen.value = eps.generate || '';
+    lastTools = availTools || [];
+    renderTools(manifest.tools || []);
+    $toolsJson.textContent = pretty(lastTools);
+  }
+
+  async function loadConfig(){
+    showAlert('');
+    try{
+      const r = await fetch('/llm/manifest/config');
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      defaults = j.manifest || {};
+      fillManifest(j.manifest || {}, j.available_tools || []);
+    }catch(e){
+      showAlert('Impossible de charger le manifest ('+e.message+').');
+      $toolsJson.textContent = '—';
+    }
+  }
+
+  async function save(){
+    showAlert('');
+    const manifest = {
+      name: $name.value.trim(),
+      version: $version.value.trim(),
+      description: $desc.value.trim(),
+      endpoints: {
+        info: $epInfo.value.trim() || '/llm/info',
+        health: $epHealth.value.trim() || '/llm/health',
+        generate: $epGen.value.trim() || '/llm/generate',
+      },
+      tools: readTools(),
+    };
+    try{
+      const r = await fetch('/llm/manifest/config', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ manifest })
+      });
+      if (!r.ok) throw new Error('HTTP '+r.status+' '+await r.text());
+      showAlert('Manifest enregistré.');
+    }catch(e){
+      showAlert('Échec de l\'enregistrement ('+e.message+').');
+    }
+  }
+
+  document.getElementById('btn-refresh').onclick = loadConfig;
+  document.getElementById('btn-save').onclick = save;
+  document.getElementById('btn-apply-tools').onclick = applyDefaultsToolsOnly;
+  document.getElementById('btn-reset').onclick = resetManifest;
+  if ($btnAdd){
+    $btnAdd.onclick = (e) => { e.preventDefault(); addRow({}); };
+  }
+
+  loadConfig();
+})();
+</script>
+{% endblock %}
