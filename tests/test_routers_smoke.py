@@ -71,3 +71,35 @@ def test_llm_ui_ok():
     client = TestClient(get_app())
     r = client.get("/llm/config/ui")
     assert r.status_code == 200
+
+
+def test_llm_config_json():
+    client = TestClient(get_app())
+    r = client.get("/llm/config")
+    assert r.status_code == 200
+    assert "config" in r.json()
+
+
+def test_llm_config_save():
+    client = TestClient(get_app())
+    payload = {"system_prompt": "test sys", "constraints": "no unsafe"}
+    r = client.post("/llm/config", json=payload)
+    assert r.status_code == 200
+    cfg = r.json().get("config", {})
+    assert cfg.get("system_prompt") == "test sys"
+    assert cfg.get("constraints") == "no unsafe"
+
+
+def test_llm_manifest_json():
+    client = TestClient(get_app())
+    r = client.get("/llm/manifest/config")
+    assert r.status_code == 200
+    j = r.json()
+    assert "manifest" in j
+    assert "available_tools" in j
+
+
+def test_llm_manifest_ui_ok():
+    client = TestClient(get_app())
+    r = client.get("/llm/manifest/ui")
+    assert r.status_code == 200
