@@ -5,7 +5,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from zoneinfo import ZoneInfo
 
@@ -24,7 +24,7 @@ META: dict[str, Any] = {
     "last_error": None,
     "weather": {"temp": None, "sunrise": None, "sunset": None, "ts": 0.0},
 }
-STATE: dict[str, Any] = {"digital": [], "analog": []}
+STATE: dict[str, Any] = {"digital": [], "analog": [], "relays": []}
 LAST_FIRED: dict[str, float] = {}  # rule_id -> last trigger timestamp
 
 # For sun edge detection: key = (rule_id, trigger) -> previous_bool
@@ -297,7 +297,7 @@ async def _eval_rules(ipx, prev: dict[str, Any], curr: dict[str, Any]) -> None:
 async def poll_forever():
     """Background loop that polls IPX, refreshes weather, and evaluates rules."""
     ipx = None
-    prev: dict[str, Any] = {"digital": [], "analog": []}
+    prev: dict[str, Any] = {"digital": [], "analog": [], "relays": []}
     global STATE
 
     interval = max(0.1, float(getattr(settings, "poll_every_seconds", 1)))
@@ -315,17 +315,23 @@ async def poll_forever():
 
             _refresh_weather_if_stale(600)
 
-            # Read current inputs/analogs
+            # Read current inputs/analogs/relays
             digital = ipx.get_inputs(max_buttons=32)
             analogs = ipx.get_analogs(max_analogs=16)
+            relays  = ipx.get_outputs(max_relays=32)
 
             STATE["digital"] = digital
             STATE["analog"] = analogs
+            STATE["relays"] = relays
 
             META["last_success"] = time.time()
 
             # Evaluate rules with copies (edge detection needs true previous values)
-            curr_snapshot = {"digital": list(digital), "analog": list(analogs)}
+            curr_snapshot = {
+                "digital": list(digital),
+                "analog": list(analogs),
+                "relays": list(relays)
+            }
             await _eval_rules(ipx, prev=prev, curr=curr_snapshot)
             prev = curr_snapshot
 

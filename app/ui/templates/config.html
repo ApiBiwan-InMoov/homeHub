@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Configuration globale · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-6">
+  <header>
+    <h1 class="text-2xl font-bold text-amber-500">Configuration globale</h1>
+    <p class="text-sm opacity-70">Modifiez les variables d'environnement persistées dans le fichier <code class="text-xs">.env</code>.</p>
+  </header>
+
+  <div id="alert" class="hidden rounded border p-3 text-sm"></div>
+
+  <section class="rounded border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+    <form id="config-form" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% for env_key, value in settings.items() %}
+        <div class="space-y-1">
+          <label for="input-{{ env_key }}" class="block text-xs font-bold uppercase tracking-wider text-slate-500">
+            {{ env_key }}
+          </label>
+          {% if value is sameas true or value is sameas false %}
+          <select id="input-{{ env_key }}" name="{{ env_key }}" class="w-full rounded bg-slate-800 border border-slate-700 p-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+            <option value="true" {% if value %}selected{% endif %}>TRUE</option>
+            <option value="false" {% if not value %}selected{% endif %}>FALSE</option>
+          </select>
+          {% else %}
+          <input 
+            type="text" 
+            id="input-{{ env_key }}" 
+            name="{{ env_key }}" 
+            value="{{ value }}" 
+            class="w-full rounded bg-slate-800 border border-slate-700 p-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none font-mono"
+          />
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="pt-4 border-t border-slate-800 flex justify-between items-center">
+        <p class="text-xs text-slate-500 italic">Un redémarrage du service peut être nécessaire pour appliquer certains changements.</p>
+        <button type="submit" id="btn-save" class="px-6 py-2 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold transition-colors shadow-lg">
+          Enregistrer les modifications
+        </button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+(function(){
+  const $form = document.getElementById('config-form');
+  const $alert = document.getElementById('alert');
+  const $btn = document.getElementById('btn-save');
+
+  function showAlert(txt, type='info'){
+    if (!txt){ $alert.classList.add('hidden'); return; }
+    $alert.textContent = txt;
+    $alert.classList.remove('hidden', 'border-amber-600', 'bg-amber-600/10', 'text-amber-500', 'border-green-600', 'bg-green-600/10', 'text-green-500', 'border-red-600', 'bg-red-600/10', 'text-red-500');
+    
+    if (type === 'success') {
+      $alert.classList.add('border-green-600', 'bg-green-600/10', 'text-green-500');
+    } else if (type === 'error') {
+      $alert.classList.add('border-red-600', 'bg-red-600/10', 'text-red-500');
+    } else {
+      $alert.classList.add('border-amber-600', 'bg-amber-600/10', 'text-amber-500');
+    }
+  }
+
+  $form.onsubmit = async (e) => {
+    e.preventDefault();
+    showAlert('Enregistrement en cours...', 'info');
+    $btn.disabled = true;
+    $btn.opacity = 0.5;
+
+    try {
+      const formData = new FormData($form);
+      const payload = {};
+      formData.forEach((value, key) => {
+        payload[key] = value;
+      });
+
+      const r = await fetch('/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const res = await r.json();
+      if (res.ok) {
+        showAlert(res.message || 'Configuration enregistrée avec succès.', 'success');
+      } else {
+        throw new Error(res.message || 'Erreur lors de l\'enregistrement');
+      }
+    } catch (e) {
+      showAlert('Erreur: ' + e.message, 'error');
+    } finally {
+      $btn.disabled = false;
+      $btn.opacity = 1;
+    }
+  };
+})();
+</script>
+{% endblock %}

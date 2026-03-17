@@ -1,4 +1,6 @@
-cat > .gitignore <<'GI'
+Internal Server Error
+Invalid subscription filter.Internal Server Error
+Invalid subscription filter.cat > .gitignore <<'GI'
 __pycache__/
 *.py[cod]
 *.pyo
@@ -22,7 +24,10 @@ app/data/
 .vscode/
 .DS_Store
 Thumbs.db
-
 node_modules/
+mosquitto/
+*.tar.gz
+*.deb
+*.txt~
 GI
 

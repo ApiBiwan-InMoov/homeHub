@@ -30,6 +30,36 @@
       <div class="text-lg font-semibold">IPX Outputs</div>
     </a>
 
+    <!-- Spotify / Now Playing -->
+    <a href="/spotify/ui" class="rounded-2xl bg-slate-800 hover:bg-slate-700 transition shadow-lg p-6 flex items-center gap-4 border border-slate-700 relative overflow-hidden group">
+      <div id="dash-track-art" class="w-16 h-16 bg-slate-700 rounded-lg flex items-center justify-center text-2xl shrink-0 group-hover:scale-105 transition-transform">
+        🎵
+      </div>
+      <div class="flex-1 min-w-0">
+        <div id="dash-track-name" class="font-bold text-white truncate">Spotify</div>
+        <div id="dash-track-artist" class="text-sm text-slate-400 truncate">Ouvrir le lecteur</div>
+      </div>
+      <div id="dash-playing-icon" class="hidden">
+        <div class="flex gap-1 items-end h-4">
+          <div class="w-1 bg-green-500 animate-[music-bounce_1s_infinite_0.1s]"></div>
+          <div class="w-1 bg-green-500 animate-[music-bounce_1s_infinite_0.3s]"></div>
+          <div class="w-1 bg-green-500 animate-[music-bounce_1s_infinite_0.5s]"></div>
+        </div>
+      </div>
+    </a>
+
+    <!-- Sound & Volume -->
+    <a href="/sound/ui" class="rounded-2xl bg-indigo-600 hover:bg-indigo-500 transition shadow p-8 flex flex-col items-center justify-center text-center relative overflow-hidden group">
+      <div class="text-4xl mb-3 group-hover:scale-110 transition-transform">🔊</div>
+      <div class="text-lg font-semibold">Son & Volume</div>
+      
+      <!-- Volume Gauge -->
+      <div class="absolute bottom-0 left-0 w-full h-2 bg-indigo-900/50">
+        <div id="dash-volume-bar" class="h-full bg-white/40 transition-all duration-500" style="width: 0%"></div>
+      </div>
+      <div id="dash-volume-text" class="absolute top-2 right-3 text-xs font-mono opacity-50 italic">--%</div>
+    </a>
+
     <!-- System Health -->
     <a href="/health/ui" class="rounded-2xl bg-amber-600 hover:bg-amber-500 transition shadow p-8 flex flex-col items-center justify-center text-center">
       <div class="text-4xl mb-3">💡</div>
@@ -43,4 +73,66 @@
     </a>
   </div>
 </div>
+
+<script>
+  async function updateDashboardVolume() {
+    try {
+      const r = await fetch('/sound/status');
+      if (!r.ok) return;
+      const data = await r.json();
+      const bar = document.getElementById('dash-volume-bar');
+      const text = document.getElementById('dash-volume-text');
+      if (bar && text) {
+        bar.style.width = data.volume + '%';
+        text.textContent = (data.muted ? 'MUTED' : data.volume + '%');
+        if (data.muted) {
+          bar.classList.add('bg-red-400');
+          bar.classList.remove('bg-white/40');
+        } else {
+          bar.classList.remove('bg-red-400');
+          bar.classList.add('bg-white/40');
+        }
+      }
+    } catch (e) {}
+  }
+
+  function updateDashboardSpotify(state) {
+    if (!state) return;
+    const track = state.track_window.current_track;
+    if (track) {
+      document.getElementById('dash-track-name').textContent = track.name;
+      document.getElementById('dash-track-artist').textContent = track.artists.map(a => a.name).join(', ');
+      if (track.album && track.album.images && track.album.images.length > 0) {
+        document.getElementById('dash-track-art').innerHTML = `<img src="${track.album.images[0].url}" class="w-full h-full object-cover rounded-lg">`;
+      }
+    }
+    document.getElementById('dash-playing-icon').classList.toggle('hidden', state.paused);
+  }
+
+  // Listen for global spotify changes
+  window.addEventListener('spotifyStateChanged', (e) => {
+    updateDashboardSpotify(e.detail);
+  });
+
+  // Initial sync for dash
+  async function syncDashSpotify() {
+    try {
+      const r = await fetch('/spotify/status');
+      const data = await r.json();
+      if (data.ok && data.status && data.status.item) {
+        document.getElementById('dash-track-name').textContent = data.status.item;
+        document.getElementById('dash-track-artist').textContent = data.status.artist;
+        if (data.status.image) {
+          document.getElementById('dash-track-art').innerHTML = `<img src="${data.status.image}" class="w-full h-full object-cover rounded-lg">`;
+        }
+        document.getElementById('dash-playing-icon').classList.toggle('hidden', !data.status.is_playing);
+      }
+    } catch (e) {}
+  }
+
+  setInterval(updateDashboardVolume, 5000);
+  setInterval(syncDashSpotify, 5000);
+  updateDashboardVolume();
+  syncDashSpotify();
+</script>
 {% endblock %}

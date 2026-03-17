@@ -48,6 +48,15 @@ def default_icons() -> list[dict[str, Any]]:
             "appearance": {"on": "#f59e0b", "off": "#334155"},
             "action": {"type": "ipx_toggle", "relay": 1},  # toggle relay 1
         },
+        {
+            "id": _new_id(),
+            "enabled": True,
+            "label": "Prise",
+            "icon": "🔌",
+            "source": {"type": "shelly", "prefix": "shelly-switch-1"},
+            "action": {"type": "shelly_toggle", "prefix": "shelly-switch-1"},
+            "appearance": {"on": "#3b82f6", "off": "#334155"},
+        },
     ]
 
 

@@ -697,7 +697,17 @@ async def calendar_oauth_callback(request: Request, state: str | None = None, co
         TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         with TOKEN_PATH.open("w", encoding="utf-8") as f:
             f.write(creds.to_json())
-        return HTMLResponse("<h3>Google Calendar connecté avec succès ✅</h3><p>Vous pouvez fermer cet onglet.</p>")
+        return HTMLResponse("""
+            <div style="font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; text-align: center; line-height: 1.5;">
+                <h3 style="color: #10b981;">Google Calendar connecté avec succès ✅</h3>
+                <p>L'authentification est terminée.</p>
+                <div style="margin-top: 30px;">
+                    <a href="/health/ui" style="display: inline-block; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Retourner à l'application</a>
+                </div>
+                <p style="margin-top: 20px; font-size: 0.9em; color: #64748b;">(Cette page se fermera automatiquement dans 5 secondes)</p>
+                <script>setTimeout(() => { window.location.href = "/health/ui"; }, 5000);</script>
+            </div>
+        """)
     except Exception as e:
         err_msg = str(e)
         return HTMLResponse(f"""

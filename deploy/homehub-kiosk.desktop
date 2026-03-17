@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=HomeHub Kiosk
+Comment=Start HomeHub Chromium Kiosk
+Exec=/home/pi/docker.files/homehub/deploy/start_kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true
+Categories=Network;WebBrowser;

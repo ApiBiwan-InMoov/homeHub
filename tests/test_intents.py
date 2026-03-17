@@ -14,3 +14,12 @@ def test_heating_toggle():
 def test_calendar():
     i = parse_command("what's my next agenda event?")
     assert i and i.action == "calendar_next"
+
+
+def test_spotify():
+    i = parse_command("joue de la musique")
+    assert i and i.action == "spotify_play"
+    i = parse_command("pause spotify")
+    assert i and i.action == "spotify_pause"
+    i = parse_command("next track")
+    assert i and i.action == "spotify_next"

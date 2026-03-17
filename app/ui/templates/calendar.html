@@ -13,21 +13,19 @@
 
 <style>
 /* a couple of tiny helpers so the layout is crisp even without Tailwind build tweaks */
-.cal-grid { display: grid; grid-template-columns: 64px 220px 1fr 130px; gap: .75rem; }
-@media (max-width: 900px){ .cal-grid { grid-template-columns: 56px 160px 1fr 110px; } }
-@media (max-width: 700px){ .cal-grid { grid-template-columns: 56px 1fr; } .cal-hide-sm { display:none; } }
+.cal-grid { display: grid; grid-template-columns: auto 1fr; gap: .75rem; }
 .cal-daybox {
-  width: 56px; height: 56px;
+  width: 54px; height: 54px;
   display:flex; align-items:center; justify-content:center;
   border-radius: .75rem; border:1px solid #334155; background: rgba(30,41,59,.7);
   font-weight: 700; font-size: 1.25rem;
 }
 .cal-pill, .cal-card, .cal-trip {
-  border:1px solid #334155; border-radius:.75rem; background: rgba(30,41,59,.6);
-  padding: .5rem .75rem; display:flex; align-items:center;
+  border:1px solid #334155; border-radius:.5rem; background: rgba(30,41,59,.6);
+  padding: .3rem .6rem; display:flex; align-items:center;
 }
 .cal-pill { font-weight:600; }
-.cal-month { font-size: 1.125rem; font-weight: 600; border-bottom:1px solid #334155; padding-bottom:.25rem; }
+.cal-month { font-size: 1.25rem; font-weight: 700; border-bottom:1px solid #334155; padding-bottom:.5rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
 </style>
 
 <script>
@@ -109,36 +107,71 @@ function row(ev){
   const start = new Date(ev.start);
   const dayNum = start.getDate();
 
-  const wrap = el('div', 'cal-grid items-center');
+  const wrap = el('div', 'cal-grid items-start'); // Changed to items-start for better multi-line alignment
 
   // Day square
-  const dayBox = el('div', 'cal-daybox');
+  const dayBox = el('div', 'cal-daybox shrink-0'); // Ensure it doesn't shrink
   dayBox.textContent = String(dayNum).padStart(2,'0');
   wrap.appendChild(dayBox);
 
-  // Calendar name cell
-  const cal = el('div', 'cal-pill cal-hide-sm');
+  // Info Container
+  const info = el('div', 'flex-1 min-w-0 flex flex-col gap-1');
+  wrap.appendChild(info);
+
+  // Row 1: Time + Duration + Title
+  const row1 = el('div', 'flex items-center gap-2');
+  info.appendChild(row1);
+
+  const time = el('div','cal-card shrink-0 flex items-center gap-2'); time.style.borderColor = color;
+  time.appendChild(el('div','font-bold', ev.all_day ? '—' : (start.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}))));
+  
+  // Added duration logic
+  const duration = (ev, start, end) => {
+    if (ev.all_day) return 'jour entier';
+    if (!start || !end) return '—';
+    const s = new Date(start), e = new Date(end);
+    let m = Math.round((e - s) / 60000);
+    if (m < 0) m = 0;
+    if (m >= 60) {
+      const h = Math.floor(m / 60), r = m % 60;
+      return r ? (h + 'h' + String(r).padStart(2, '0')) : (h + 'h');
+    }
+    return m + ' min';
+  };
+  time.appendChild(el('div','text-[10px] opacity-70 whitespace-nowrap', duration(ev, ev.start, ev.end)));
+  row1.appendChild(time);
+
+  const title = el('div', 'cal-card flex-1 min-w-0 flex items-center');
+  title.style.borderColor = color;
+  const t = el('div', 'font-bold truncate flex-1', ev.title || '(no title)');
+  title.appendChild(t);
+  row1.appendChild(title);
+
+  // Row 2: Location + Cal Name + Trip Duration
+  const row2 = el('div', 'flex items-center gap-2');
+  info.appendChild(row2);
+
+  const cal = el('div', 'cal-pill text-[10px] whitespace-nowrap shrink-0 opacity-90 truncate max-w-[80px]');
   cal.textContent = ev.calendar || 'Default';
   cal.style.borderColor = color;
-  wrap.appendChild(cal);
+  row2.appendChild(cal);
 
-  // Title cell (event title / optional location)
-  const title = el('div', 'cal-card');
-  title.style.borderColor = color;
-  const t = el('div', 'font-semibold mr-2', ev.title || '(no title)');
-  const loc = ev.location ? el('div', 'opacity-80 text-sm', `· ${ev.location}`) : null;
-  title.appendChild(t);
-  if (loc) title.appendChild(loc);
-  wrap.appendChild(title);
+  if (ev.location) {
+    const loc = el('div', 'text-sm opacity-70 truncate flex-1 min-w-0', `📍 ${ev.location}`);
+    row2.appendChild(loc);
+  } else {
+    // Spacer if no location to keep Trip Duration on the right
+    row2.appendChild(el('div', 'flex-1 min-w-0'));
+  }
 
   // Trip duration cell
-  const trip = el('div', 'cal-trip cal-hide-sm');
+  const trip = el('div', 'cal-trip text-[10px] whitespace-nowrap shrink-0');
   trip.style.borderColor = color;
   const txt = getTripText(ev);
-  const icon = el('span', 'mr-2', '🚗'); // swap for any icon set you use
+  const icon = el('span', 'mr-1', '🚗');
   trip.appendChild(icon);
   trip.appendChild(el('span', '', txt));
-  wrap.appendChild(trip);
+  row2.appendChild(trip);
 
   return wrap;
 }

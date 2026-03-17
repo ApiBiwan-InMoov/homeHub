@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Chauffage · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-4 space-y-8 pb-24">
+  <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+    <h1 class="text-3xl font-bold flex items-center gap-3">
+      <span>🔥</span> Gestion du Chauffage
+    </h1>
+    
+    <!-- Winter/Summer Toggle -->
+    <div class="flex bg-slate-800 p-1 rounded-xl border border-slate-700 shadow-inner">
+      <button id="btn-winter" onclick="setMode('winter')" class="px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
+        <span class="text-blue-400">❄️</span> Hiver
+      </button>
+      <button id="btn-summer" onclick="setMode('summer')" class="px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
+        <span class="text-orange-400">☀️</span> Été
+      </button>
+    </div>
+  </div>
+
+  <!-- Summary Dashboard -->
+  <section>
+    <h2 class="text-xl font-semibold mb-4 opacity-80 flex items-center gap-2">
+       <span class="w-2 h-6 bg-blue-600 rounded-full"></span>
+       État Global
+    </h2>
+    <div id="summary-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <!-- Loaded via JS -->
+      <div class="animate-pulse bg-slate-800 h-24 rounded-2xl"></div>
+      <div class="animate-pulse bg-slate-800 h-24 rounded-2xl"></div>
+      <div class="animate-pulse bg-slate-800 h-24 rounded-2xl"></div>
+      <div class="animate-pulse bg-slate-800 h-24 rounded-2xl"></div>
+    </div>
+  </section>
+
+  <!-- Zones Grid -->
+  <section>
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-semibold opacity-80 flex items-center gap-2">
+        <span class="w-2 h-6 bg-orange-600 rounded-full"></span>
+        Zones & Températures
+      </h2>
+      <div id="last-update" class="text-[10px] font-mono opacity-50 uppercase">Mise à jour: --:--:--</div>
+    </div>
+    <div id="zones-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Loaded via JS -->
+    </div>
+  </section>
+
+  <!-- DDG Override Panel -->
+  <section class="bg-slate-850 p-6 rounded-3xl border border-slate-700/50 shadow-xl">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <div>
+        <h2 class="text-xl font-bold mb-1">Override Degrés-Jours (DDG)</h2>
+        <p class="text-sm opacity-60">Force la valeur de calcul du chauffage indépendamment de la météo.</p>
+      </div>
+      
+      <div class="flex flex-wrap items-center gap-4">
+        <div class="text-center px-6 py-3 bg-black/30 rounded-2xl border border-white/5">
+          <span class="block text-[10px] uppercase opacity-50 font-black mb-1">Calculé</span>
+          <span id="ddg-calculated" class="text-2xl font-black">—</span>
+        </div>
+        
+        <div class="h-12 w-px bg-slate-700 hidden lg:block"></div>
+        
+        <div class="flex items-center gap-4 bg-slate-900/60 p-4 rounded-2xl border border-slate-700/50 shadow-inner">
+           <label class="flex items-center gap-3 cursor-pointer group">
+             <input type="checkbox" id="ddg-active" class="w-6 h-6 rounded-lg border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-0 focus:ring-0">
+             <span class="text-sm font-bold group-hover:text-blue-400 transition-colors">Activer Override</span>
+           </label>
+           <div class="relative">
+             <input type="number" id="ddg-value" step="0.1" class="w-24 bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-center font-black text-lg focus:border-blue-500 outline-none transition-colors" value="0.0">
+             <span class="absolute -top-2 -right-2 bg-blue-600 text-[9px] px-1.5 py-0.5 rounded-md font-bold">VAL</span>
+           </div>
+           <button onclick="saveDDG()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl font-black transition-all active:scale-95 shadow-lg shadow-blue-600/20">
+             APPLIQUER
+           </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+{% raw %}
+<script>
+  async function setMode(mode) {
+    try {
+      const r = await fetch('/heating/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+      if (r.ok) updateUI();
+    } catch (e) { console.error(e); }
+  }
+
+  async function saveDDG() {
+    const active = document.getElementById('ddg-active').checked;
+    const value = parseFloat(document.getElementById('ddg-value').value);
+    try {
+      await fetch('/heating/ddg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ override_active: active, override_value: value })
+      });
+      updateUI();
+    } catch (e) { console.error(e); }
+  }
+
+  function renderStatusItem(item) {
+    const colorClass = {
+      'ok': item.active ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : 'border-slate-700 bg-slate-800/40 text-slate-400',
+      'warning': 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+      'fault': 'border-red-500/50 bg-red-500/10 text-red-400'
+    }[item.status] || 'border-slate-700 bg-slate-800/40';
+
+    return `
+      <div class="p-5 rounded-3xl border-2 ${colorClass} transition-all flex flex-col items-center text-center shadow-sm">
+        <span class="text-[10px] uppercase opacity-60 mb-2 font-black tracking-widest">${item.label}</span>
+        <span class="text-xl font-black">${item.display}</span>
+      </div>
+    `;
+  }
+
+  function renderZone(zone) {
+    const demand = zone.demand;
+    const diffVal = zone.diff || 0;
+    const diff = zone.diff !== null ? (diffVal > 0 ? '+' + diffVal.toFixed(1) : diffVal.toFixed(1)) : '--';
+    const current = zone.current !== null ? zone.current.toFixed(1) : '--';
+    
+    return `
+      <div class="p-7 rounded-[2.5rem] border-2 ${demand ? 'border-orange-500/50 bg-orange-500/5 shadow-2xl shadow-orange-500/10' : 'border-slate-700/50 bg-slate-800/30'} transition-all relative overflow-hidden group">
+        ${demand ? '<div class="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 blur-3xl -mr-16 -mt-16 animate-pulse"></div>' : ''}
+        
+        <div class="flex justify-between items-start mb-6 relative">
+          <div>
+            <h3 class="text-2xl font-black mb-1 group-hover:text-orange-400 transition-colors">${zone.label}</h3>
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${demand ? 'bg-orange-500 animate-ping' : 'bg-slate-600'}"></span>
+              <span class="text-[10px] uppercase opacity-50 font-black tracking-widest">Demande: ${demand ? 'ACTIVE' : 'IDLE'}</span>
+            </div>
+          </div>
+          <div class="text-4xl filter drop-shadow-lg">${demand ? '🔥' : '❄️'}</div>
+        </div>
+        
+        <div class="flex items-end justify-between relative">
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase opacity-40 font-black mb-1 tracking-tighter">Température</span>
+            <div class="flex items-baseline gap-1">
+              <span class="text-5xl font-black tabular-nums">${current}</span>
+              <span class="text-xl font-bold opacity-30">°C</span>
+            </div>
+          </div>
+          
+          <div class="flex flex-col items-end gap-3">
+             <div class="flex flex-col items-end bg-black/40 px-4 py-2 rounded-2xl border border-white/5 shadow-inner">
+                <span class="text-[9px] uppercase opacity-40 font-black tracking-widest">Cible</span>
+                <span class="text-xl font-black text-blue-400 tabular-nums">${zone.target.toFixed(1)}°</span>
+             </div>
+             <div class="text-sm font-black px-3 py-1 rounded-full ${diffVal > 0 ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'}">
+                Δ ${diff}°
+             </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function updateUI() {
+    try {
+      const [modeData, summary, temps, ddg] = await Promise.all([
+        fetch('/heating/mode').then(r => r.json()),
+        fetch('/heating/summary').then(r => r.json()),
+        fetch('/heating/temps').then(r => r.json()),
+        fetch('/heating/ddg').then(r => r.json())
+      ]);
+
+      // Update Mode Buttons
+      const isWinter = modeData.mode === 'winter';
+      const btnW = document.getElementById('btn-winter');
+      const btnS = document.getElementById('btn-summer');
+      
+      btnW.className = isWinter ? 'px-6 py-2 rounded-lg font-bold bg-blue-600 text-white shadow-lg scale-105 transition-all' : 'px-6 py-2 rounded-lg font-bold text-slate-400 hover:text-white transition-all';
+      btnS.className = !isWinter ? 'px-6 py-2 rounded-lg font-bold bg-orange-600 text-white shadow-lg scale-105 transition-all' : 'px-6 py-2 rounded-lg font-bold text-slate-400 hover:text-white transition-all';
+
+      // Update Summary
+      document.getElementById('summary-grid').innerHTML = summary.map(renderStatusItem).join('');
+
+      // Update Zones
+      document.getElementById('zones-grid').innerHTML = temps.map(renderZone).join('');
+
+      // Update DDG
+      document.getElementById('ddg-calculated').textContent = ddg.calculated.toFixed(1);
+      document.getElementById('ddg-active').checked = ddg.override_active;
+      // Only update value if not focused to avoid jumping while typing
+      if (document.activeElement !== document.getElementById('ddg-value')) {
+        document.getElementById('ddg-value').value = ddg.override_value;
+      }
+
+      document.getElementById('last-update').textContent = 'Mise à jour: ' + new Date().toLocaleTimeString();
+    } catch (e) { console.error('UI Update failed', e); }
+  }
+
+  // Poll every 5s for less noise, but immediate on start
+  setInterval(updateUI, 5000);
+  updateUI();
+</script>
+{% endraw %}
+
+<style>
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .bg-slate-850 { background-color: #151c2c; }
+</style>
+{% endblock %}

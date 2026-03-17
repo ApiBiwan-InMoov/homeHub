@@ -6,42 +6,38 @@
 
   <!-- WEATHER -->
   <section>
-    <h2 class="text-xl font-semibold mb-3">Météo</h2>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div class="grid grid-cols-2 gap-3">
       <!-- Today summary -->
-      <div class="rounded-xl p-4 border border-slate-700 bg-slate-800/60 flex items-center gap-4">
-        <div id="wx-today-ico" class="text-4xl">☀️</div>
-        <div>
-          <div class="text-sm opacity-70">Aujourd'hui</div>
-          <div id="wx-summary" class="text-lg font-semibold">—</div>
-          <div id="wx-minmax" class="opacity-80 mt-1">—</div>
-          <div id="wx-extra" class="opacity-70 text-sm mt-1">—</div>
+      <div class="rounded-xl p-3 border border-slate-700 bg-slate-800/60 flex flex-col justify-center gap-2">
+        <div class="flex items-center gap-4">
+          <div id="wx-today-ico" class="text-5xl">☀️</div>
+          <div id="wx-summary" class="text-lg font-bold">—</div>
+        </div>
+        <div class="space-y-1">
+          <div id="wx-minmax" class="text-sm opacity-80">—</div>
+          <div id="wx-extra" class="opacity-70 text-xs">—</div>
         </div>
       </div>
 
-      <!-- Temp + precip chart -->
-      <div class="rounded-xl p-4 border border-slate-700 bg-slate-800/60 lg:col-span-2">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-sm opacity-70">Aujourd'hui · Température & Pluie</div>
-          <div id="wx-range" class="text-xs opacity-60"></div>
-        </div>
-        <div class="w-full">
-          <canvas id="wx-chart" style="width:100%; height:200px;"></canvas>
+      <!-- Temp + precip chart (Condensed) -->
+      <div class="rounded-xl p-2 border border-slate-700 bg-slate-800/60">
+        <div class="w-full h-32">
+          <canvas id="wx-chart" style="width:100%; height:120px;"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- Hour by hour -->
-    <div class="mt-3">
-      <div class="text-sm opacity-70 mb-2">Heure par heure</div>
-      <div id="wx-hourly" class="flex gap-2 overflow-x-auto pb-2"></div>
+    <!-- Hour by hour (Mini) -->
+    <div class="mt-2 flex gap-2 overflow-x-auto scrollbar-hide">
+      <div id="wx-hourly" class="flex gap-2"></div>
     </div>
 
-    <!-- 7-day -->
+    <!-- Daily forecast (NEW) -->
     <div class="mt-4">
-      <div class="text-sm opacity-70 mb-2">Prochains 7 jours</div>
-      <div id="wx-daily" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2"></div>
+      <h2 class="text-lg font-semibold mb-2">Prévisions 7 jours</h2>
+      <div class="flex gap-2 overflow-x-auto scrollbar-hide">
+        <div id="wx-daily" class="flex gap-2"></div>
+      </div>
     </div>
   </section>
 
@@ -55,18 +51,17 @@
     <div id="home-cal-err" class="text-sm text-amber-400 hidden"></div>
   </section>
 
-  <!-- ACTION BUTTON -->
-  <section class="flex justify-center py-4">
-    <button id="main-action-btn" class="w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/50 flex items-center justify-center text-4xl transition-transform active:scale-95">
-      🏠
-    </button>
-  </section>
-
-  <!-- STATUS STRIP -->
-  <section>
-    <h2 class="text-xl font-semibold mb-3">Raccourcis</h2>
-    <div id="status-icons" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3"></div>
-    <div id="status-err" class="text-sm text-amber-400 hidden"></div>
+  <!-- STATUS STRIP & VOCAL -->
+  <section class="fixed bottom-0 left-0 w-full bg-slate-900/95 border-t border-slate-700 p-3 z-40 backdrop-blur-md">
+    <div class="flex items-center gap-4 max-w-7xl mx-auto">
+      <!-- Vocal Button -->
+      <button id="main-action-btn" class="flex-none w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/50 flex items-center justify-center text-2xl transition-transform active:scale-95">
+        🎙️
+      </button>
+      
+      <!-- Shortcuts (One line) -->
+      <div id="status-icons" class="flex-1 flex flex-nowrap overflow-x-auto gap-3 pb-1 scrollbar-hide"></div>
+    </div>
   </section>
 
 </div>
@@ -80,20 +75,17 @@
 .hourchip{ min-width:70px; }
 
  /* Calendar grid — same as events.html */
- .cal-grid { display:grid; grid-template-columns:64px 160px 220px 1fr 130px; gap:.75rem; }
- @media (max-width:1100px){ .cal-grid{ grid-template-columns:56px 140px 180px 1fr 110px; } }
- @media (max-width:900px){  .cal-grid{ grid-template-columns:56px 140px 1fr; } .cal-hide-md{ display:none; } }
- @media (max-width:700px){  .cal-grid{ grid-template-columns:56px 1fr; } .cal-hide-sm{ display:none; } }
+ .cal-grid { display:grid; grid-template-columns:auto 1fr; gap:.75rem; }
 
- .cal-daybox{ width:56px;height:56px;display:flex;align-items:center;justify-content:center;
+ .cal-daybox{ width:54px;height:54px;display:flex;align-items:center;justify-content:center;
               border-radius:.75rem;border:1px solid #334155;background:rgba(30,41,59,.7);
               font-weight:700;font-size:1.25rem; }
- .cal-pill,.cal-card,.cal-chip{ border:1px solid #334155;border-radius:.75rem;background:rgba(30,41,59,.6);
-                                padding:.5rem .75rem;display:flex;align-items:center; }
+ .cal-pill,.cal-card,.cal-chip,.cal-trip{ border:1px solid #334155;border-radius:.5rem;background:rgba(30,41,59,.6);
+                                padding:.3rem .6rem;display:flex;align-items:center; }
  .cal-pill{ font-weight:600; }
- .cal-month{ font-size:1.125rem;font-weight:600;border-bottom:1px solid #334155;padding-bottom:.25rem; }
+ .cal-month{ font-size:1.25rem;font-weight:700;border-bottom:1px solid #334155;padding-bottom:.5rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em; }
  .subtle{ opacity:.75;font-size:.85rem; }
- .daywrap{ position:relative;width:56px;height:56px; }
+ .daywrap{ width:54px; }
  .cal-badge{ position:absolute;bottom:-6px;right:-6px;font-size:.70rem;line-height:1;padding:3px 6px;
              border-radius:9999px;background:#0ea5e9;color:white;box-shadow:0 1px 2px rgba(0,0,0,.3); }
  .cal-ongoing{ border:1px solid #f59e0b;background:rgba(245,158,11,.15);font-weight:700;margin-left:.5rem; }
@@ -175,17 +167,7 @@
 
   // ---------- Weather icons ----------
   function wxIcon(code){
-    code = Number(code);
-    if ([0].includes(code)) return "☀️";
-    if ([1].includes(code)) return "🌤️";
-    if ([2].includes(code)) return "⛅️";
-    if ([3].includes(code)) return "☁️";
-    if ([45,48].includes(code)) return "🌫️";
-    if ([51,53,55].includes(code)) return "🌦️";
-    if ([61,63,65,80,81,82].includes(code)) return "🌧️";
-    if ([71,73,75].includes(code)) return "🌨️";
-    if ([95,96,99].includes(code)) return "⛈️";
-    return "🌡️";
+    return wmoToIconAndText(Number(code)).icon;
   }
 
   // ---------- Countdown manager (for status icons) ----------
@@ -358,9 +340,41 @@
 
   // ---------- WEATHER ----------
   async function loadWeather(){
-    const r = await fetch('/weather/pack',{cache:'no-store'});
-    if(!r.ok) throw new Error(await r.text());
-    return r.json();
+    try {
+      const r = await fetch('/weather/hourly', {cache:'no-store'});
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      
+      const hours = data.hours || [];
+      const daily = data.daily || [];
+      const tz = (data.meta && data.meta.tz) || "UTC";
+      
+      const nowLocalHour = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+      nowLocalHour.setMinutes(0,0,0,0);
+      const startIdx = hours.findIndex(h => new Date(h.time) >= nowLocalHour);
+      const hourly24 = (startIdx >= 0) ? hours.slice(startIdx, startIdx + 24) : hours.slice(0, 24);
+      const current = hourly24[0] || {};
+      
+      return {
+        today: {
+          code: current.code,
+          summary: wmoToIconAndText(current.code != null ? current.code : 0).text,
+          temp_now: current.temp,
+          tmax: Math.max(...hourly24.map(h => h.temp ?? h.t ?? 0)),
+          tmin: Math.min(...hourly24.map(h => h.temp ?? h.t ?? 0)),
+          precip: current.mm ?? current.p ?? 0,
+          wind: current.windspeed ?? 0
+        },
+        hourly24: hourly24,
+        daily7: daily
+      };
+    } catch (e) {
+      console.error("Home weather load failed:", e);
+      // Fallback to old endpoint if it exists or re-throw
+      const r = await fetch('/weather/pack',{cache:'no-store'});
+      if(!r.ok) throw e;
+      return r.json();
+    }
   }
 
   function drawChart(canvas, hours){
@@ -378,8 +392,8 @@
     const H = cssH - M.t - M.b;
     if (hours.length < 2) return;
 
-    const temps = hours.map(h=>Number(h.t));
-    const precs = hours.map(h=>Number(h.p||0));
+    const temps = hours.map(h=>Number(h.temp ?? h.t ?? 0));
+    const precs = hours.map(h=>Number(h.mm ?? h.p ?? 0));
     const times = hours.map(h=>new Date(h.time));
 
     const tmin = Math.min(...temps), tmax = Math.max(...temps);
@@ -445,31 +459,44 @@
     document.getElementById('wx-summary').textContent = (wx.today.summary || 'Météo') + (wx.today.temp_now!=null ? (' · ' + (Math.round(wx.today.temp_now)+'°')) : '');
     document.getElementById('wx-minmax').textContent = 'Max ' + fmtC(wx.today.tmax) + '  •  Min ' + fmtC(wx.today.tmin);
     document.getElementById('wx-extra').textContent = 'Précip: ' + fmtmm(wx.today.precip) + (wx.today.wind!=null ? ('  •  Vent ' + Math.round(wx.today.wind) + ' km/h') : '');
-    const start = wx.hourly24[0]?.time, end = wx.hourly24.at(-1)?.time;
-    document.getElementById('wx-range').textContent = (start?start.slice(11,16):'') + ' – ' + (end?end.slice(11,16):'');
+    
     const canvas = document.getElementById('wx-chart');
     const redraw = ()=> drawChart(canvas, wx.hourly24);
     new ResizeObserver(redraw).observe(canvas.parentElement);
     redraw();
 
     const hw = document.getElementById('wx-hourly'); hw.innerHTML = '';
-    wx.hourly24.slice(0, 18).forEach(h=>{
-      const chip = el('div','badge hourchip flex flex-col items-center gap-1');
-      chip.appendChild(el('div','text-xs opacity-70', fmtHour(h.time)));
-      chip.appendChild(el('div','text-xl', wxIcon(h.code!=null ? h.code : (h.p>0 ? 61 : 0))));
-      chip.appendChild(el('div','font-semibold', fmtC(h.t)));
-      chip.appendChild(el('div','text-xs opacity-70', h.p ? (h.p.toFixed(1)+'mm') : '—'));
+    
+    // Filter to start from current hour
+    const nowLocalHour = new Date();
+    nowLocalHour.setMinutes(0,0,0,0);
+    const hourlyStartIdx = wx.hourly24.findIndex(h => new Date(h.time) >= nowLocalHour);
+    const hourlySlice = hourlyStartIdx >= 0 ? wx.hourly24.slice(hourlyStartIdx, hourlyStartIdx + 18) : wx.hourly24.slice(0, 18);
+
+    hourlySlice.forEach(h=>{
+      const chip = el('div','badge hourchip flex-none flex flex-col items-center gap-1 py-1 px-2');
+      chip.style.minWidth = "64px";
+      chip.appendChild(el('div','text-[10px] opacity-70', fmtHour(h.time)));
+      chip.appendChild(el('div','text-lg', wxIcon(h.code!=null ? h.code : (h.p>0 ? 61 : 0))));
+      chip.appendChild(el('div','text-sm font-semibold', fmtC(h.temp || h.t)));
       hw.appendChild(chip);
     });
 
     const dw = document.getElementById('wx-daily'); dw.innerHTML = '';
     wx.daily7.forEach(d=>{
-      const box = el('div','badge flex flex-col items-center py-2');
-      box.appendChild(el('div','text-xs opacity-70', new Date(d.date).toLocaleDateString(undefined,{weekday:'short', day:'2-digit', month:'short'})));
-      box.appendChild(el('div','text-2xl', wxIcon(d.code)));
-      box.appendChild(el('div','text-sm', d.label || '—'));
-      box.appendChild(el('div','text-sm font-semibold', fmtC(d.tmax) + ' / ' + fmtC(d.tmin)));
-      box.appendChild(el('div','text-xs opacity-70', d.precip ? (d.precip.toFixed(1)+'mm') : '—'));
+      const box = el('div','badge flex-none flex flex-col items-center py-2 px-2 w-24');
+      
+      let dateTxt = new Date(d.date).toLocaleDateString(undefined,{weekday:'short', day:'2-digit'});
+      let precipTxt = d.precip > 0.1 ? (d.precip.toFixed(1)+'mm') : '';
+
+      box.appendChild(el('div','text-[10px] font-bold opacity-70', dateTxt));
+      box.appendChild(el('div','text-2xl my-0.5', wxIcon(d.code)));
+      box.appendChild(el('div','flex gap-2 text-xs font-bold', null));
+      box.lastChild.appendChild(el('span','text-orange-400', fmtC(d.tmax)));
+      box.lastChild.appendChild(el('span','text-blue-400', fmtC(d.tmin)));
+      if (precipTxt) {
+        box.appendChild(el('div','text-[10px] opacity-70', precipTxt));
+      }
       dw.appendChild(box);
     });
   }
@@ -485,6 +512,24 @@
     if (m>=60){ const h=Math.floor(m/60), r=m%60; return r ? (h+'h'+String(r).padStart(2,'0')) : (h+'h'); }
     return m+' min';
   };
+  function wmoToIconAndText(code) {
+    let icon = "☀️", text = "Ciel dégagé", kind = "sec";
+    if (code === 0) { icon="☀️"; text="Ciel dégagé"; }
+    else if ([1].includes(code)) { icon="🌤️"; text="Peu nuageux"; }
+    else if ([2].includes(code)) { icon="🌥️"; text="Partiellement nuageux"; }
+    else if ([3].includes(code)) { icon="☁️"; text="Nuageux"; }
+    else if ([45,48].includes(code)) { icon="🌫️"; text="Brouillard"; }
+    else if ([51,53,55].includes(code)) { icon="🌦️"; text="Bruine"; kind="pluie"; }
+    else if ([56,57].includes(code)) { icon="🌧️"; text="Bruine verglaçante"; kind="pluie verglaçante"; }
+    else if ([61,63,65].includes(code)) { icon="🌧️"; text="Pluie"; kind="pluie"; }
+    else if ([66,67].includes(code)) { icon="🌧️"; text="Pluie verglaçante"; kind="pluie verglaçante"; }
+    else if ([71,73,75,77].includes(code)) { icon="❄️"; text="Neige"; kind="neige"; }
+    else if ([80,81,82].includes(code)) { icon="🌦️"; text="Averses"; kind="pluie"; }
+    else if ([85,86].includes(code)) { icon="🌨️"; text="Averses de neige"; kind="neige"; }
+    else if (code === 95) { icon="⛈️"; text="Orages"; kind="orage"; }
+    else if ([96,99].includes(code)) { icon="⛈️"; text="Orages violents (grêle)"; kind="grêle"; }
+    return { icon, text, kind };
+  }
   const getCalName = ev => (ev.calendarName || ev?.organizer?.displayName || ev?.organizer?.email || ev.calendarId || 'Default');
 
   function extractLocationText(ev){
@@ -583,34 +628,51 @@
     const s = getStart(ev), e = getEnd(ev), allDay = isAllDay(ev);
     const d = s ? new Date(s) : null;
     const day = d ? String(d.getDate()).padStart(2,'0') : '--';
-    const wrap = el('div','cal-grid items-center');
+    const wrap = el('div','cal-grid items-start'); // items-start for better alignment with multiple rows
 
-    const dayBox = el('div','cal-daybox', day);
+    const dayBox = el('div','cal-daybox shrink-0', day);
     const dayWrap = el('div','daywrap'); dayWrap.appendChild(dayBox);
     wrap.appendChild(dayWrap);
 
-    const time = el('div','cal-card'); time.style.borderColor = color;
-    time.appendChild(el('div','font-semibold mr-2', allDay ? '—' : (d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}))));
-    time.appendChild(el('div','subtle', computeDuration(s,e,allDay)));
-    wrap.appendChild(time);
+    // Info Container
+    const info = el('div', 'flex-1 min-w-0 flex flex-col gap-1');
+    wrap.appendChild(info);
 
-    const cal = el('div','cal-pill cal-hide-sm', getCalName(ev)); cal.style.borderColor = color; wrap.appendChild(cal);
+    // Row 1: Time + Duration + Title
+    const row1 = el('div', 'flex items-center gap-2');
+    info.appendChild(row1);
 
-    const title = el('div','cal-card'); title.style.borderColor = color;
+    const time = el('div','cal-card shrink-0 flex items-center gap-2'); time.style.borderColor = color;
+    time.appendChild(el('div','font-bold', allDay ? '—' : (d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}))));
+    time.appendChild(el('div','subtle text-[10px] whitespace-nowrap', computeDuration(s,e,allDay)));
+    row1.appendChild(time);
+
+    const title = el('div','cal-card flex-1 min-w-0 flex items-center'); title.style.borderColor = color;
     const head = document.createElement('a');
-    head.className = 'font-semibold mr-2 underline decoration-dotted';
+    head.className = 'font-bold truncate underline decoration-dotted flex-1';
     head.textContent = ev.summary || ev.title || '(sans titre)';
     const calId = ev.calendarId || (ev.organizer && ev.organizer.email) || '';
     head.href = (ev.id && calId) ? ('/calendar/ui/edit?eventId='+encodeURIComponent(ev.id)+'&calendarId='+encodeURIComponent(calId)) : 'javascript:void(0)';
     title.appendChild(head);
-    
+    row1.appendChild(title);
+
+    // Row 2: Location + Cal Name + Trip
+    const row2 = el('div', 'flex items-center gap-2');
+    info.appendChild(row2);
+
+    const cal = el('div','cal-pill text-[10px] whitespace-nowrap shrink-0 opacity-80 truncate max-w-[80px]', getCalName(ev)); 
+    cal.style.borderColor = color; 
+    row2.appendChild(cal);
+
     var locTxt = extractLocationText(ev);
     if (locTxt){
-      title.appendChild(el('div','subtle','· ' + locTxt));
+      const loc = el('div', 'text-sm opacity-70 truncate flex-1', `📍 ${locTxt}`);
+      row2.appendChild(loc);
+    } else {
+      row2.appendChild(el('div', 'flex-1'));
     }
-    wrap.appendChild(title);
 
-    const cell = el('div','cal-chip cal-hide-md');
+    const cell = el('div','cal-trip text-[10px] whitespace-nowrap shrink-0');
     cell.style.borderColor = color;
     cell.setAttribute('data-location', locTxt || '');
     cell.setAttribute('data-at', s || '');
@@ -618,11 +680,11 @@
     var dm = ev.drive_minutes || ev.trip_minutes;
     if (dm != null) cell.setAttribute('data-drive-minutes', dm);
 
-    cell.appendChild(el('span','mr-2','🚗'));
+    cell.appendChild(el('span','mr-1','🚗'));
     const span = el('span','js-commute-val', cell.getAttribute('data-location') ? '…' : '—');
     cell.appendChild(span);
     io.observe(cell);
-    wrap.appendChild(cell);
+    row2.appendChild(cell);
 
     return wrap;
   }

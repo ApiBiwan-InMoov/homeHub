@@ -161,7 +161,7 @@ def weather_hourly():
                 "code": h.get("code"),
             }
         )
-    return {"meta": {"tz": tz}, "hours": hours}
+    return {"meta": {"tz": tz}, "hours": hours, "daily": pack.get("daily7", [])}
 
 
 @router.get("/pack")

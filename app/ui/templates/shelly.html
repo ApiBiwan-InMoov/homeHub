@@ -1,0 +1,598 @@
+{% extends "base.html" %}
+{% block title %}Shelly · HomeHub{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-8">
+    <h1 class="text-3xl font-bold flex items-center gap-3">
+      <span>🔌</span> Shelly Devices
+    </h1>
+    <div class="flex gap-2">
+      <button onclick="openManageModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm flex items-center gap-2">
+        <span>⚙️</span> Gérer
+      </button>
+      <a href="/shelly/monitor" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm flex items-center gap-2">
+        <span>🛰️</span> Monitor MQTT
+      </a>
+    </div>
+  </div>
+
+  <div id="shelly-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% for cfg in configs %}
+    <div id="card-{{ cfg.id }}" class="p-5 rounded-2xl border-2 bg-slate-800/60 border-slate-700 transition-all">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-bold">{{ cfg.label }}</h2>
+          <p class="text-xs opacity-50 font-mono">{{ cfg.topic_prefix }} • {{ cfg.type|capitalize }}</p>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <div id="status-icon-{{ cfg.id }}" class="text-3xl">⚪</div>
+          <button onclick="checkConnectivity('{{ cfg.id }}')" class="text-[9px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded opacity-60 hover:opacity-100 transition-all">
+            Vérifier
+          </button>
+        </div>
+      </div>
+      
+      {% if cfg.type == 'switch' %}
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="toggleShelly('{{ cfg.id }}')" class="py-3 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 font-bold transition-colors">
+          Basculer
+        </button>
+        <button id="btn-power-{{ cfg.id }}" onclick="setShelly('{{ cfg.id }}', true)" class="py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold transition-colors">
+          Allumer
+        </button>
+      </div>
+      {% elif cfg.type == 'thermostat' %}
+      <div class="space-y-4">
+        <div class="flex items-center justify-between bg-black/20 p-3 rounded-xl">
+          <div class="text-center flex-1">
+            <span class="block text-[10px] uppercase opacity-50">Actuelle</span>
+            <span id="temp-curr-{{ cfg.id }}" class="text-2xl font-bold">--°C</span>
+          </div>
+          <div class="w-px h-8 bg-slate-700"></div>
+          <div class="text-center flex-1">
+            <span class="block text-[10px] uppercase opacity-50">Cible</span>
+            <span id="temp-target-{{ cfg.id }}" class="text-2xl font-bold text-blue-400">--°C</span>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="changeTarget('{{ cfg.id }}', -0.5)" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold">- 0.5°</button>
+          <button onclick="changeTarget('{{ cfg.id }}', 0.5)" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold">+ 0.5°</button>
+        </div>
+      </div>
+      {% endif %}
+      
+      <div id="meta-{{ cfg.id }}" class="mt-4 pt-4 border-t border-slate-700 text-sm space-y-1 hidden">
+        <div class="flex justify-between">
+          <span class="opacity-60">Puissance</span>
+          <span id="power-{{ cfg.id }}">--</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="opacity-60">Température</span>
+          <span id="temp-{{ cfg.id }}">--</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-12 p-6 bg-slate-800/40 rounded-2xl border border-slate-700">
+    <h3 class="text-lg font-bold mb-4">Guide de Configuration Shelly (Gen3)</h3>
+    <div class="space-y-4 text-sm">
+      <p class="opacity-70">
+        Pour que vos appareils apparaissent ici, vous devez les configurer dans leur interface web (IP de l'appareil) :
+      </p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="space-y-2">
+          <p class="font-bold text-blue-400">1. Réglages MQTT</p>
+          <ul class="list-disc ml-5 space-y-1 opacity-80">
+            <li><b>Enable MQTT:</b> Coché</li>
+            <li><b>Server:</b> <code class="bg-black/30 px-1 rounded" id="mqtt-server-hint">IP_DU_PI:1883</code></li>
+            <li><b>User/Pass:</b> Vide (par défaut)</li>
+            <li><b>RPC over MQTT:</b> Coché (Indispensable)</li>
+          </ul>
+        </div>
+        <div class="space-y-2">
+          <p class="font-bold text-blue-400">2. Identification</p>
+          <ul class="list-disc ml-5 space-y-1 opacity-80">
+            <li><b>MQTT Prefix:</b> Identique au "Topic Prefix" défini ici (ex: <code class="bg-black/30 px-1 rounded">shelly-switch-1</code>)</li>
+            <li><b>Generic status:</b> Coché</li>
+          </ul>
+        </div>
+      </div>
+      <div class="pt-4 border-t border-slate-700 flex justify-between items-center">
+        <div class="flex gap-4 items-center">
+            <a href="/config" class="text-blue-400 hover:underline">Réglages système (MQTT Host)</a>
+            <span class="text-slate-500">•</span>
+            <span class="text-xs text-amber-400">💡 Tip: Shelly updates only on change or every ~60s</span>
+        </div>
+        <span class="text-[10px] opacity-40 italic">Note: Le broker intégré accepte les connexions anonymes.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de gestion -->
+<div id="manage-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+    <div class="p-6 border-bottom border-slate-700 flex justify-between items-center">
+      <h2 class="text-xl font-bold">Gérer les appareils Shelly</h2>
+      <button onclick="closeManageModal()" class="text-2xl opacity-50 hover:opacity-100">&times;</button>
+    </div>
+    
+    <div class="p-6 overflow-y-auto flex-1 space-y-4" id="manage-list">
+      <!-- List populated by JS -->
+    </div>
+    
+    <div class="p-6 border-t border-slate-700 bg-blue-500/5">
+      <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+        <span>🚀</span> Configuration à distance (Nouveau)
+      </h3>
+      <div class="flex flex-wrap gap-2">
+        <input type="text" id="setup-ip" placeholder="IP du Shelly (ex: 192.168.1.10)" class="flex-1 min-w-[150px] bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+        <input type="text" id="setup-prefix" placeholder="Prefix (ex: shelly-kitchen)" class="flex-1 min-w-[150px] bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+        <select id="setup-type" class="bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+          <option value="switch">Switch</option>
+          <option value="thermostat">Thermostat (TRV)</option>
+        </select>
+        <button onclick="remoteSetup()" id="btn-remote-setup" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-colors">
+          Configurer
+        </button>
+      </div>
+      <div id="setup-status" class="mt-3 hidden p-3 rounded-lg bg-black/20 text-xs">
+        <div class="flex items-center gap-2">
+          <span id="setup-status-spinner">⏳</span>
+          <span id="setup-status-msg">Configuration en cours...</span>
+        </div>
+      </div>
+      <p class="text-[10px] opacity-50 mt-2">
+        Cette option enverra les réglages MQTT au Shelly via son adresse IP et le redémarrera.
+      </p>
+    </div>
+    
+    <div class="p-6 border-t border-slate-700 flex justify-between">
+      <button onclick="addDeviceRow()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition-colors">
+        + Ajouter un appareil
+      </button>
+      <button onclick="saveDevices()" id="btn-save-configs" class="px-6 py-2 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition-colors">
+        Enregistrer
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Track optimistic updates
+  const pendingActions = {};
+
+  async function toggleShelly(id) {
+    const card = document.getElementById(`card-${id}`);
+    const icon = document.getElementById(`status-icon-${id}`);
+    const btnPower = document.getElementById(`btn-power-${id}`);
+    
+    // Optimistic toggle if we know current state
+    const isCurrentlyOn = icon.textContent === '🟢';
+    const nextState = !isCurrentlyOn;
+    
+    pendingActions[id] = { type: 'switch', val: nextState, ts: Date.now() };
+    
+    // Immediate visual feedback
+    icon.textContent = '⏳';
+    card.style.borderColor = 'rgba(234, 179, 8, 0.5)'; // Amber
+    
+    try {
+      await fetch(`/shelly/toggle/${id}`, { method: 'POST' });
+      // We wait for the next refreshStatus to confirm
+    } catch (e) { 
+      console.error(e);
+      delete pendingActions[id];
+      refreshStatus();
+    }
+  }
+
+  async function setShelly(id, on) {
+    const card = document.getElementById(`card-${id}`);
+    const icon = document.getElementById(`status-icon-${id}`);
+    
+    pendingActions[id] = { type: 'switch', val: on, ts: Date.now() };
+    
+    // Immediate visual feedback
+    icon.textContent = '⏳';
+    card.style.borderColor = 'rgba(234, 179, 8, 0.5)'; // Amber
+    
+    try {
+      await fetch(`/shelly/set/${id}`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ on: on })
+      });
+    } catch (e) { 
+      console.error(e);
+      delete pendingActions[id];
+      refreshStatus();
+    }
+  }
+
+  async function setThermostatTarget(id, target) {
+    const targetEl = document.getElementById(`temp-target-${id}`);
+    if (targetEl) {
+        targetEl.textContent = target.toFixed(1) + '°C';
+        targetEl.classList.add('text-amber-400');
+        targetEl.classList.remove('text-blue-400');
+    }
+    
+    pendingActions[id] = { type: 'target', val: target, ts: Date.now() };
+    
+    try {
+      await fetch(`/shelly/thermostat/${id}/target`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: target })
+      });
+    } catch (e) { 
+      console.error(e);
+      delete pendingActions[id];
+      refreshStatus();
+    }
+  }
+
+  async function checkConnectivity(id) {
+    const icon = document.getElementById(`status-icon-${id}`);
+    const originalIcon = icon.textContent;
+    icon.textContent = '⏳';
+    try {
+      const r = await fetch(`/shelly/check/${id}`);
+      const data = await r.json();
+      const lines = [];
+      if (data.message) lines.push(data.message);
+      if (data.ping) lines.push('Ping (' + data.ping.ip + '): ' + (data.ping.ok ? 'OK' : '❌'));
+      if (data.http) lines.push('HTTP RPC (' + data.http.ip + '): ' + (data.http.ok ? 'OK' : '❌') + (data.http.detail ? ' — ' + data.http.detail : ''));
+      alert('Status de ' + id + ':\n' + (lines.length ? lines.join('\n') : 'Aucun détail'));
+      refreshStatus();
+    } catch (e) {
+      alert("Erreur lors de la vérification");
+    } finally {
+      if (icon.textContent === '⏳') icon.textContent = originalIcon;
+    }
+  }
+
+  function changeTarget(id, delta) {
+    const el = document.getElementById(`temp-target-${id}`);
+    if (!el || el.textContent === '--°C') return;
+    const current = parseFloat(el.textContent);
+    setThermostatTarget(id, current + delta);
+  }
+
+  async function refreshStatus() {
+    try {
+      const resp = await fetch('/shelly/status');
+      const data = await resp.json();
+      
+      for (const [id, status] of Object.entries(data)) {
+        const card = document.getElementById(`card-${id}`);
+        const icon = document.getElementById(`status-icon-${id}`);
+        const btnPower = document.getElementById(`btn-power-${id}`);
+        const meta = document.getElementById(`meta-${id}`);
+        
+        if (!status) {
+          icon.textContent = '❓';
+          card.classList.add('opacity-50');
+          continue;
+        }
+        
+        card.classList.remove('opacity-50');
+
+        // Handle Switch
+        if (status.output !== undefined) {
+          let on = status.output === true;
+          
+          // Check for pending optimistic state (max 20s)
+          const pending = pendingActions[id];
+          if (pending && pending.type === 'switch' && (Date.now() - pending.ts < 20000)) {
+            if (pending.val === on) {
+              // Device has synced
+              console.log(`[Shelly] ${id} switch synced to ${on}`);
+              delete pendingActions[id];
+            } else {
+              // Show optimistic state but keep card amber to indicate it's syncing
+              on = pending.val;
+              card.style.borderColor = 'rgba(234, 179, 8, 0.5)'; // Amber syncing
+            }
+          }
+
+          icon.textContent = on ? '🟢' : '🔴';
+          if (!pending || pending.type !== 'switch') {
+              card.style.borderColor = on ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+          }
+          
+          if (btnPower) {
+            btnPower.textContent = on ? 'Éteindre' : 'Allumer';
+            btnPower.onclick = () => setShelly(id, !on);
+            btnPower.className = on 
+              ? "py-3 px-4 rounded-xl bg-red-600 hover:bg-red-500 font-bold transition-colors"
+              : "py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold transition-colors";
+          }
+        }
+
+        // Handle Thermostat
+        if (status.current_C !== undefined) {
+            icon.textContent = '🌡️';
+            document.getElementById(`temp-curr-${id}`).textContent = status.current_C.toFixed(1) + '°C';
+            
+            const targetEl = document.getElementById(`temp-target-${id}`);
+            let targetDisp = status.target_C;
+            let isPending = false;
+            
+            const pending = pendingActions[id];
+            if (pending && pending.type === 'target' && (Date.now() - pending.ts < 20000)) {
+                if (typeof status.target_C === 'number' && Math.abs(pending.val - status.target_C) < 0.1) {
+                    console.log(`[Shelly] ${id} target synced to ${status.target_C}`);
+                    delete pendingActions[id];
+                } else {
+                    targetDisp = pending.val;
+                    isPending = true;
+                }
+            }
+            
+            targetEl.textContent = targetDisp.toFixed(1) + '°C';
+            if (isPending) {
+                targetEl.classList.add('text-amber-400');
+                targetEl.classList.remove('text-blue-400');
+                card.style.borderColor = 'rgba(234, 179, 8, 0.5)'; // Amber syncing
+            } else {
+                targetEl.classList.remove('text-amber-400');
+                targetEl.classList.add('text-blue-400');
+                // Highlight card if heating
+                if (status.output === true) {
+                    card.style.borderColor = 'rgba(239, 68, 68, 0.5)'; // Reddish if valve open
+                } else {
+                    card.style.borderColor = 'rgba(59, 130, 246, 0.5)'; // Blueish if idle
+                }
+            }
+        }
+        
+        if (status.apower !== undefined) {
+          meta.classList.remove('hidden');
+          document.getElementById(`power-${id}`).textContent = status.apower.toFixed(1) + ' W';
+          if (status.temperature && status.temperature.tC !== undefined) {
+            document.getElementById(`temp-${id}`).textContent = status.temperature.tC.toFixed(1) + ' °C';
+          }
+        }
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // Poll status every 3 seconds
+  setInterval(refreshStatus, 3000);
+  refreshStatus();
+
+  // --- Management Logic ---
+  let currentConfigs = [];
+
+  function openManageModal() {
+    fetch('/shelly/config').then(r => r.json()).then(data => {
+      currentConfigs = data;
+      renderManageList();
+      document.getElementById('manage-modal').classList.remove('hidden');
+    });
+  }
+
+  function closeManageModal() {
+    document.getElementById('manage-modal').classList.add('hidden');
+  }
+
+  function renderManageList() {
+    const list = document.getElementById('manage-list');
+    list.innerHTML = '';
+    currentConfigs.forEach((cfg, idx) => {
+      const row = document.createElement('div');
+      row.className = 'p-4 rounded-xl bg-slate-800 border border-slate-700 space-y-3';
+      
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'flex gap-3';
+      labelDiv.innerHTML = `
+          <div class="flex-[2]">
+            <label class="block text-[10px] uppercase opacity-50 mb-1">Nom (Label)</label>
+            <input type="text" class="cfg-label w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+          </div>
+          <div class="flex-1">
+            <label class="block text-[10px] uppercase opacity-50 mb-1">Type</label>
+            <select class="cfg-type w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+                <option value=\"switch\">Switch</option>
+                <option value=\"thermostat\">Thermostat (TRV)</option>
+            </select>
+          </div>
+          <div class="flex-[2]">
+            <label class="block text-[10px] uppercase opacity-50 mb-1">Topic Prefix</label>
+            <input type="text" class="cfg-prefix w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm">
+          </div>
+          <div class="flex-[2]">
+            <label class="block text-[10px] uppercase opacity-50 mb-1">IP (optionnel)</label>
+            <input type="text" class="cfg-ip w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm" placeholder="ex: 192.168.1.42">
+          </div>
+          <button class="btn-remove self-end p-2 text-red-400 hover:bg-red-400/10 rounded">🗑️</button>
+      `;
+      
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'flex items-center gap-4';
+      metaDiv.innerHTML = `
+           <label class="flex items-center gap-2 cursor-pointer">
+             <input type="checkbox" class="cfg-enabled">
+             <span class="text-xs">Activé</span>
+           </label>
+           <span class="cfg-id text-[10px] opacity-30 font-mono"></span>
+      `;
+
+      const inputLabel = labelDiv.querySelector('.cfg-label');
+      inputLabel.value = cfg.label;
+      inputLabel.onchange = (e) => updateCfg(idx, 'label', e.target.value);
+
+      const selectType = labelDiv.querySelector('.cfg-type');
+      selectType.value = cfg.type || 'switch';
+      selectType.onchange = (e) => updateCfg(idx, 'type', e.target.value);
+
+      const inputPrefix = labelDiv.querySelector('.cfg-prefix');
+      inputPrefix.value = cfg.topic_prefix;
+      inputPrefix.onchange = (e) => updateCfg(idx, 'topic_prefix', e.target.value);
+
+      const inputIp = labelDiv.querySelector('.cfg-ip');
+      inputIp.value = cfg.ip || '';
+      inputIp.onchange = (e) => updateCfg(idx, 'ip', e.target.value);
+
+      labelDiv.querySelector('.btn-remove').onclick = () => removeDevice(idx);
+
+      const inputEnabled = metaDiv.querySelector('.cfg-enabled');
+      inputEnabled.checked = cfg.enabled;
+      inputEnabled.onchange = (e) => updateCfg(idx, 'enabled', e.target.checked);
+
+      metaDiv.querySelector('.cfg-id').textContent = 'ID: ' + cfg.id;
+
+      row.appendChild(labelDiv);
+      row.appendChild(metaDiv);
+      list.appendChild(row);
+    });
+  }
+
+  function updateCfg(idx, key, val) {
+    currentConfigs[idx][key] = val;
+  }
+
+  function addDeviceRow() {
+    currentConfigs.push({
+      id: 'shelly-' + Math.random().toString(36).substr(2, 6),
+      label: 'Nouveau Shelly',
+      topic_prefix: 'shelly-switch-X',
+      type: 'switch',
+      enabled: true
+    });
+    renderManageList();
+  }
+
+  function removeDevice(idx) {
+    if (confirm("Supprimer cet appareil ?")) {
+      currentConfigs.splice(idx, 1);
+      renderManageList();
+    }
+  }
+
+  async function saveDevices() {
+    const btn = document.getElementById('btn-save-configs');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+    try {
+      const r = await fetch('/shelly/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentConfigs)
+      });
+      if (r.ok) {
+        location.reload();
+      } else {
+        alert("Erreur lors de l'enregistrement");
+      }
+    } catch (e) {
+      alert("Erreur réseau");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Enregistrer';
+    }
+  }
+
+  async function remoteSetup() {
+    const ip = document.getElementById('setup-ip').value.trim();
+    const prefix = document.getElementById('setup-prefix').value.trim();
+    const type = document.getElementById('setup-type').value;
+    const btn = document.getElementById('btn-remote-setup');
+    const statusDiv = document.getElementById('setup-status');
+    const statusMsg = document.getElementById('setup-status-msg');
+    const statusSpinner = document.getElementById('setup-status-spinner');
+    
+    if (!ip || !prefix) {
+      alert("Veuillez saisir l'IP et le Prefix");
+      return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = 'Envoi...';
+    statusDiv.classList.remove('hidden');
+    statusMsg.textContent = 'Envoi de la configuration MQTT...';
+    statusSpinner.textContent = '⏳';
+    
+    try {
+      const r = await fetch('/shelly/remote-setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, prefix, type })
+      });
+      
+      const res = await r.json();
+      if (!r.ok) {
+        throw new Error(res.detail || "Échec de la configuration");
+      }
+
+      // Start verification phase
+      statusMsg.textContent = 'Config envoyée. Le Shelly redémarre. Vérification de la connectivité (cela peut prendre 30s)...';
+      
+      // We will poll /shelly/check-remote until it's online or timeout
+      let attempts = 0;
+      const maxAttempts = 15;
+      const pollInterval = 3000;
+
+      const checkRemote = async () => {
+        attempts++;
+        try {
+          const vr = await fetch(`/shelly/remote-check?ip=${ip}&prefix=${prefix}&type=${type}`);
+          const vres = await vr.json();
+          
+          if (vres.online) {
+            statusMsg.textContent = '✅ Succès ! L\'appareil est en ligne et communique via MQTT.';
+            statusSpinner.textContent = '✨';
+            
+            if (!currentConfigs.some(c => c.topic_prefix === prefix)) {
+              if (confirm("L'appareil est configuré et en ligne. Voulez-vous l'ajouter à votre liste ?")) {
+                currentConfigs.push({
+                  id: 'shelly-' + Math.random().toString(36).substr(2, 6),
+                  label: prefix,
+                  topic_prefix: prefix,
+                  type: type,
+                  ip: ip,
+                  enabled: true
+                });
+                renderManageList();
+              }
+            }
+            btn.disabled = false;
+            btn.textContent = 'Configurer';
+            return;
+          }
+        } catch (e) { console.error("Poll error", e); }
+
+        if (attempts < maxAttempts) {
+          setTimeout(checkRemote, pollInterval);
+        } else {
+          statusMsg.textContent = '⚠️ Config envoyée mais l\'appareil n\'a pas encore été vu sur MQTT. Vérifiez manuellement.';
+          statusSpinner.textContent = '❓';
+          btn.disabled = false;
+          btn.textContent = 'Configurer';
+        }
+      };
+
+      setTimeout(checkRemote, 5000); // Wait 5s before first check to allow reboot
+      
+    } catch (e) {
+      statusMsg.textContent = '❌ Erreur: ' + e.message;
+      statusSpinner.textContent = '🛑';
+      btn.disabled = false;
+      btn.textContent = 'Configurer';
+    }
+  }
+
+  // Update MQTT server hint from current hostname
+  (function updateMqttHint() {
+    fetch('/config/json').then(r => r.json()).then(cfg => {
+      const host = cfg.MQTT_HOST === 'localhost' ? location.hostname : cfg.MQTT_HOST;
+      document.getElementById('mqtt-server-hint').textContent = `${host}:1883`;
+    });
+  })();
+</script>
+{% endblock %}

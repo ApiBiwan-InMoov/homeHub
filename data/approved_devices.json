@@ -1,0 +1,16 @@
+{
+  "a7896a05-53ca-4445-8c12-a0534f019e7d": {
+    "id": "a7896a05-53ca-4445-8c12-a0534f019e7d",
+    "user_agent": "Unknown (Migrated)",
+    "approved_at": "2026-02-16T16:37:06.865381",
+    "last_seen": "2026-02-16T16:37:06.865389",
+    "name": null
+  },
+  "5dec4e28-6b00-4e82-9793-c74ea5036961": {
+    "id": "5dec4e28-6b00-4e82-9793-c74ea5036961",
+    "user_agent": "testclient",
+    "approved_at": "2026-02-16T16:37:06.865400",
+    "last_seen": "2026-02-16T16:37:06.875533",
+    "name": null
+  }
+}

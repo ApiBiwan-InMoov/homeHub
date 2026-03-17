@@ -37,11 +37,19 @@
     </div>
   </section>
 
-  <!-- Cartes horaires (18 h à partir de maintenant) -->
-  <section>
-    <div id="hour-cards" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3"></div>
-  </section>
-</div>
+    <!-- Cartes horaires (18 h à partir de maintenant) -->
+    <section class="overflow-x-auto pb-4 scrollbar-hide">
+      <div id="hour-cards" class="flex flex-nowrap gap-3"></div>
+    </section>
+
+    <!-- Prévisions 7 jours -->
+    <section class="space-y-3">
+      <h2 class="text-xl font-semibold">Prévisions 7 jours</h2>
+      <div class="overflow-x-auto pb-4 scrollbar-hide">
+        <div id="daily-cards" class="flex flex-nowrap gap-3"></div>
+      </div>
+    </section>
+  </div>
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
@@ -90,12 +98,15 @@
 
     // "Now" snapped to current local hour in tz
     const now = new Date();
-    const nowLocalHour = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-    nowLocalHour.setMinutes(0,0,0);
+    // Using simple ISO string manipulation to avoid complex toLocaleString parsing issues for comparisons
+    // but the original logic of getting the local hour is what the user wants to keep, just fixed.
+    const nowLocalHour = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+    nowLocalHour.setMinutes(0,0,0,0);
 
     // Find first hour >= snapped now
     let startIdx = hours.findIndex(h => {
       const dh = new Date(h.time);
+      // We compare the hour components or the full dates
       return dh >= nowLocalHour;
     });
 
@@ -146,7 +157,7 @@
       document.getElementById("weather-icon").textContent = icon;
       document.getElementById("weather-msg").textContent = text;
       document.getElementById("weather-sub").textContent =
-        `${fmtHour(h0.time, tz)} • ${Math.round(h0.temp)}°C • ${mm.toFixed(1)} mm • ${Math.round(h0.pop || 0)}% — ${msg}`;
+        fmtHour(h0.time, tz) + " • " + Math.round(h0.temp) + "°C • " + mm.toFixed(1) + " mm • " + Math.round(h0.pop || 0) + "% — " + msg;
     }
 
     // Données graphe
@@ -302,15 +313,45 @@
                        : (mm > 0 || p > 0) ? "Pluie"
                        : "Sec";
       const card = document.createElement("div");
-      card.className = "rounded-2xl bg-slate-800/60 p-3 shadow flex flex-col items-center text-center";
+      card.className = "flex-none w-28 rounded-2xl bg-slate-800/60 p-3 shadow flex flex-col items-center text-center";
+      
+      let hourTxt = fmtHour(h.time, tz);
+      let tempTxt = Math.round(h.temp) + "°C";
+      let precipPopTxt = mm.toFixed(1) + " mm • " + p + "%";
+
       card.innerHTML = `
-        <div class="text-sm opacity-80">${fmtHour(h.time, tz)}</div>
+        <div class="text-sm opacity-80">${hourTxt}</div>
         <div class="text-3xl my-1">${icon}</div>
-        <div class="text-lg font-semibold">${Math.round(h.temp)}°C</div>
-        <div class="text-sm mt-1">${mm.toFixed(1)} mm • ${p}%</div>
+        <div class="text-lg font-semibold">${tempTxt}</div>
+        <div class="text-sm mt-1">${precipPopTxt}</div>
         <div class="text-xs opacity-80">${typeLabel}</div>
       `;
       $cards.appendChild(card);
+    });
+
+    // Cartes quotidiennes (7 jours)
+    const $daily = document.getElementById("daily-cards");
+    const daily = data.daily || [];
+    $daily.innerHTML = "";
+    daily.forEach(d => {
+      const { icon, text } = wmoToIconAndText(Number(d.code));
+      const card = document.createElement("div");
+      card.className = "flex-none w-24 rounded-2xl bg-slate-800/60 p-3 shadow flex flex-col items-center text-center";
+      
+      let precipTxt = d.precip ? (d.precip.toFixed(1) + ' mm') : '—';
+      let dateTxt = new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit' });
+      
+      card.innerHTML = `
+        <div class="text-sm font-bold opacity-80">${dateTxt}</div>
+        <div class="text-3xl my-1">${icon}</div>
+        <div class="flex gap-2 text-base font-bold">
+          <span class="text-orange-400">${Math.round(d.tmax)}°</span>
+          <span class="text-blue-400">${Math.round(d.tmin)}°</span>
+        </div>
+        <div class="text-xs mt-1">${precipTxt}</div>
+        <div class="text-xs opacity-70 truncate w-full">${text}</div>
+      `;
+      $daily.appendChild(card);
     });
   }
 

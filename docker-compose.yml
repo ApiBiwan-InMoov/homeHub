@@ -7,7 +7,9 @@ services:
     env_file:
       - .env
     volumes:
-      - ./secrets:/app/secrets:ro
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/systemd:/var/run/systemd
+      - ./secrets:/app/secrets:rw
       - ./app:/app/app:rw
     # Expose host sound devices for microphone features (ALSA/PortAudio)
     devices:
@@ -16,4 +18,16 @@ services:
       - audio
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+    restart: always
+    privileged: true
+    pid: host
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: always
+    network_mode: host
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log

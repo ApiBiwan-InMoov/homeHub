@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+
+{% block title %}Spotify - HomeHub{% endblock %}
+
+{% block content %}
+<style>
+    .music-visualizer {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 30px;
+    }
+    .visualizer-bar {
+        width: 4px;
+        background: #22c55e;
+        border-radius: 2px;
+        height: 20%;
+        transition: height 0.3s ease;
+    }
+    .visualizer-active .visualizer-bar {
+        animation: music-bounce 1.2s infinite ease-in-out;
+    }
+    .visualizer-bar:nth-child(1) { animation-delay: 0.1s; }
+    .visualizer-bar:nth-child(2) { animation-delay: 0.3s; }
+    .visualizer-bar:nth-child(3) { animation-delay: 0.5s; }
+    .visualizer-bar:nth-child(4) { animation-delay: 0.2s; }
+    .visualizer-bar:nth-child(5) { animation-delay: 0.4s; }
+
+    @keyframes music-bounce {
+        0%, 100% { height: 20%; }
+        50% { height: 100%; }
+    }
+
+    .now-playing-card {
+        position: relative;
+        overflow: hidden;
+        transition: all 0.5s ease;
+    }
+    .now-playing-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        filter: blur(40px) brightness(0.4);
+        opacity: 0.5;
+        z-index: 0;
+        transition: background-image 0.8s ease;
+    }
+    .now-playing-content {
+        position: relative;
+        z-index: 10;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+</style>
+
+<div class="max-w-4xl mx-auto p-4">
+    <div class="flex items-center justify-between mb-8">
+        <h1 class="text-3xl font-bold flex items-center gap-3">
+            <span class="text-green-500">🎵</span> Spotify
+        </h1>
+        <div class="flex items-center gap-3">
+            <div id="auth-status" class="px-4 py-2 rounded-full text-sm font-medium">
+                Vérification...
+            </div>
+            <a href="/spotify/login" class="text-xs text-slate-500 hover:text-green-500 transition-colors bg-slate-700/30 px-3 py-1.5 rounded-full border border-slate-700 font-semibold flex items-center gap-1">
+                <span>🔄</span> Reconnexion
+            </a>
+            <button onclick="refreshAll()" class="text-xs text-slate-500 hover:text-green-500 transition-colors bg-slate-700/30 px-3 py-1.5 rounded-full border border-slate-700 font-semibold flex items-center gap-1">
+                <span>♻️</span> Tout actualiser
+            </button>
+        </div>
+    </div>
+
+<div id="login-section" class="hidden bg-slate-800 p-8 rounded-2xl border border-slate-700 text-center">
+        <p class="text-slate-400 mb-6">Connectez-vous à Spotify pour contrôler votre musique depuis HomeHub.</p>
+        <a href="/spotify/login" class="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full transition-colors">
+            Se connecter avec Spotify
+        </a>
+    </div>
+
+    <!-- Error Message -->
+    <div id="spotify-error" class="hidden mb-6 bg-red-900/30 border border-red-500/50 p-4 rounded-xl text-red-200 text-sm">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">⚠️</span>
+                <span id="spotify-error-msg" class="font-medium text-base">Une erreur est survenue</span>
+            </div>
+            <button onclick="this.parentElement.parentElement.classList.add('hidden')" class="text-red-400 hover:text-red-200 text-lg">✕</button>
+        </div>
+        <p class="text-xs text-red-300/80 ml-8 italic">
+            Astuce : Si le <strong>HomeHub Speaker</strong> est manquant, ouvrez Spotify sur votre téléphone et connectez-vous y une fois pour l'associer à votre compte.
+        </p>
+    </div>
+
+    <!-- Health Check -->
+    <div id="health-section" class="hidden bg-slate-800 p-6 rounded-2xl border border-slate-700">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <h3 class="font-bold text-slate-200">État de la connexion Spotify</h3>
+                <span id="health-badge" class="px-3 py-1 rounded-full text-xs font-semibold"></span>
+            </div>
+            <button onclick="copyHealthDetails()" class="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1 bg-slate-700/30 px-2 py-1 rounded border border-slate-700">
+                <span>📋 Copier les détails</span>
+            </button>
+        </div>
+        <div id="health-details" class="mt-3 text-sm text-slate-300 select-text"></div>
+    </div>
+
+    <div id="player-section" class="hidden space-y-6">
+        <!-- Now Playing Card -->
+        <div class="now-playing-card bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-2xl">
+            <div id="player-bg" class="now-playing-bg"></div>
+            
+            <div class="now-playing-content">
+                <div class="flex flex-col md:flex-row items-center md:items-end gap-8">
+                    <div id="track-art" class="w-48 h-48 md:w-56 md:h-56 bg-slate-700 rounded-2xl flex items-center justify-center text-5xl shadow-2xl shrink-0 transition-transform hover:scale-105 duration-500">
+                        🎵
+                    </div>
+                    
+                    <div class="flex-1 min-w-0 text-center md:text-left">
+                        <div class="flex items-center justify-center md:justify-start gap-3 mb-4">
+                            <div id="visualizer" class="music-visualizer">
+                                <div class="visualizer-bar"></div>
+                                <div class="visualizer-bar"></div>
+                                <div class="visualizer-bar"></div>
+                                <div class="visualizer-bar"></div>
+                                <div class="visualizer-bar"></div>
+                            </div>
+                            <span id="device-name" class="text-xs text-green-500 uppercase tracking-[0.2em] font-bold"></span>
+                        </div>
+                        
+                        <h2 id="track-name" class="text-3xl md:text-4xl font-black truncate text-white mb-2 leading-tight">Prêt à jouer</h2>
+                        <p id="track-artist" class="text-xl text-slate-300 truncate font-medium">Lancez une musique pour commencer</p>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex items-center justify-center gap-10 mt-10">
+                    <button onclick="spotifyAction('previous')" class="text-3xl text-slate-400 hover:text-white transition-all hover:scale-110">
+                        <span class="sr-only">Précédent</span>⏮
+                    </button>
+                    <button id="play-pause-btn" onclick="togglePlay()" class="w-20 h-20 bg-green-500 text-white rounded-full text-3xl flex items-center justify-center hover:scale-110 hover:bg-green-400 transition-all shadow-lg shadow-green-500/20">
+                        ▶
+                    </button>
+                    <button onclick="spotifyAction('next')" class="text-3xl text-slate-400 hover:text-white transition-all hover:scale-110">
+                        <span class="sr-only">Suivant</span>⏭
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Search/Play -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                <h3 class="font-bold mb-4">Recherche rapide</h3>
+                <div class="flex gap-2">
+                    <input type="text" id="spotify-query" placeholder="Titre, album, artiste..." 
+                           class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <button onclick="searchAndPlay()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-bold transition-colors">
+                        Jouer
+                    </button>
+                </div>
+            </div>
+
+        <!-- Spotify Devices -->
+        <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+            <h3 class="font-bold mb-4">Appareils Spotify</h3>
+            <div id="spotify-devices" class="space-y-2 mb-4">
+                <p class="text-slate-500 text-sm">Chargement...</p>
+            </div>
+            <div class="border-t border-slate-700 pt-4 mt-4">
+                <p class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">Haut-parleur local</p>
+                <div class="flex items-center justify-between text-sm">
+                    <div>
+                        <span id="speaker-name" class="text-slate-300">HomeHub Speaker</span>
+                        <span id="speaker-device" class="text-xs text-slate-500 ml-2">(default)</span>
+                    </div>
+                    <span class="text-green-500 text-xs flex items-center gap-1">
+                        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Actif
+                    </span>
+                </div>
+            </div>
+        </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Playlists -->
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold flex items-center gap-2">
+                        <span>📁</span> Mes Playlists
+                    </h3>
+                    <button onclick="updatePlaylists()" class="text-xs text-green-500 hover:text-green-400">Actualiser</button>
+                </div>
+                <div id="spotify-playlists" class="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                    <p class="text-slate-500 text-sm italic">Chargement des playlists...</p>
+                </div>
+            </div>
+
+            <!-- Suggestions -->
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold flex items-center gap-2">
+                        <span>✨</span> Suggestions
+                    </h3>
+                    <button onclick="updateRecommendations()" class="text-xs text-green-500 hover:text-green-400">Actualiser</button>
+                </div>
+                <div id="spotify-recommendations" class="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                    <p class="text-slate-500 text-sm italic">Chargement des suggestions...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let isPlaying = false;
+    
+    // Listen for global spotify changes
+    window.addEventListener('spotifyStateChanged', (e) => {
+        updateUIFromState(e.detail);
+    });
+
+    function updateUIFromState(state) {
+        if (!state) return;
+        isPlaying = !state.paused;
+        updateVisualizerState(isPlaying);
+        document.getElementById('play-pause-btn').textContent = isPlaying ? '⏸' : '▶';
+        
+        if (state.track_window && state.track_window.current_track) {
+            const track = state.track_window.current_track;
+            document.getElementById('track-name').textContent = track.name;
+            document.getElementById('track-artist').textContent = track.artists.map(a => a.name).join(', ');
+            document.getElementById('device-name').textContent = 'Sur HomeHub Web Player';
+            
+            if (track.album && track.album.images && track.album.images.length > 0) {
+                const artUrl = track.album.images[0].url;
+                document.getElementById('track-art').innerHTML = `<img src="${artUrl}" class="w-full h-full object-cover rounded-2xl shadow-2xl">`;
+                document.getElementById('player-bg').style.backgroundImage = `url(${artUrl})`;
+            }
+        }
+    }
+
+    function updateVisualizerState(active) {
+        const visualizer = document.getElementById('visualizer');
+        if (active) {
+            visualizer.classList.add('visualizer-active');
+        } else {
+            visualizer.classList.remove('visualizer-active');
+        }
+    }
+
+    async function updateStatus() {
+        try {
+            const r = await fetch('/spotify/status');
+            const data = await r.json();
+            
+            const authStatus = document.getElementById('auth-status');
+            const loginSection = document.getElementById('login-section');
+            const playerSection = document.getElementById('player-section');
+
+            if (!data.authenticated) {
+                authStatus.textContent = 'Non connecté';
+                authStatus.className = 'px-4 py-2 rounded-full text-sm font-medium bg-red-900/30 text-red-400';
+                loginSection.classList.remove('hidden');
+                playerSection.classList.add('hidden');
+                document.getElementById('health-section').classList.remove('hidden');
+                return;
+            }
+
+            authStatus.textContent = 'Connecté';
+            authStatus.className = 'px-4 py-2 rounded-full text-sm font-medium bg-green-900/30 text-green-400';
+            loginSection.classList.add('hidden');
+            playerSection.classList.remove('hidden');
+
+            const status = data.status;
+            if (status && (status.item || status.has_active_device !== undefined)) {
+                if (status.item) {
+                    document.getElementById('track-name').textContent = status.item;
+                    document.getElementById('track-artist').textContent = status.artist;
+                    document.getElementById('device-name').textContent = 'Sur ' + (status.device || 'appareil inconnu');
+                    
+                    if (status.image) {
+                        document.getElementById('track-art').innerHTML = `<img src="${status.image}" class="w-full h-full object-cover rounded-2xl shadow-2xl">`;
+                        document.getElementById('player-bg').style.backgroundImage = `url(${status.image})`;
+                    }
+                } else {
+                    document.getElementById('track-name').textContent = 'Pas de lecture active';
+                    document.getElementById('track-artist').textContent = status.has_active_device ? 'Appareil prêt' : 'Aucun appareil actif';
+                    document.getElementById('device-name').textContent = '';
+                }
+                isPlaying = status.is_playing;
+                updateVisualizerState(isPlaying);
+                document.getElementById('play-pause-btn').textContent = isPlaying ? '⏸' : '▶';
+            } else {
+                document.getElementById('track-name').textContent = 'Pas de lecture active';
+                document.getElementById('track-artist').textContent = 'Lancez Spotify sur un appareil';
+                document.getElementById('play-pause-btn').textContent = '▶';
+                updateVisualizerState(false);
+            }
+        } catch (e) {
+            console.error('Failed to update status', e);
+        }
+    }
+
+    async function updatePlaylists() {
+        try {
+            console.log("Fetching playlists...");
+            const r = await fetch('/spotify/playlists');
+            console.log("Playlists response status:", r.status);
+            const data = await r.json();
+            console.log("Playlists data:", data);
+            const container = document.getElementById('spotify-playlists');
+            if (data.ok && data.items) {
+                if (data.items.length === 0) {
+                    container.innerHTML = '<p class="text-slate-500 text-sm">Aucune playlist trouvée.</p>';
+                    return;
+                }
+                container.innerHTML = data.items.map(p => {
+                    const total = (p.tracks && p.tracks.total !== undefined) ? p.tracks.total : 0;
+                    return `
+                        <button onclick="playUri('${p.uri}')" class="w-full text-left p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors flex items-center gap-3 group">
+                            <span class="text-xl">📁</span>
+                            <div class="flex-1 truncate">
+                                <div class="font-medium text-slate-200">${p.name}</div>
+                                <div class="text-xs text-slate-400">${total} titres</div>
+                            </div>
+                            <span class="opacity-0 group-hover:opacity-100 text-green-500">▶</span>
+                        </button>
+                    `;
+                }).join('');
+            } else {
+                const errMsg = data.message || 'Impossible de charger les playlists';
+                container.innerHTML = `<p class="text-red-400 text-sm">Erreur: ${errMsg}</p>`;
+                console.error("Playlists fetch not ok or no items:", data);
+            }
+        } catch (e) { console.error("Error in updatePlaylists:", e); }
+    }
+
+    async function updateRecommendations() {
+        try {
+            const r = await fetch('/spotify/recommendations');
+            const data = await r.json();
+            const container = document.getElementById('spotify-recommendations');
+            if (data.ok && data.items) {
+                container.innerHTML = data.items.map(t => `
+                    <button onclick="playUri('${t.uri}')" class="w-full text-left p-3 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors flex items-center gap-3 group">
+                        <span class="text-xl">🎵</span>
+                        <div class="flex-1 truncate">
+                            <div class="font-medium text-slate-200">${t.name}</div>
+                            <div class="text-xs text-slate-400">${t.artists[0].name}</div>
+                        </div>
+                        <span class="opacity-0 group-hover:opacity-100 text-green-500">▶</span>
+                    </button>
+                `).join('') || '<p class="text-slate-500 text-sm">Pas de suggestions pour le moment.</p>';
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    async function updateSpotifyDevices() {
+        try {
+            const r = await fetch('/spotify/devices');
+            const data = await r.json();
+            const container = document.getElementById('spotify-devices');
+            if (data.ok && data.items) {
+                container.innerHTML = data.items.map(d => {
+                    const icon = d.type === 'Smartphone' ? '📱' : d.type === 'Computer' ? '💻' : '🔊';
+                    const activeClass = d.is_active ? 'bg-green-900/20 border border-green-500/30' : 'bg-slate-700/50 hover:bg-slate-700';
+                    const nameClass = d.is_active ? 'text-green-400' : 'text-slate-200';
+                    const statusText = d.is_active ? 'Actif' : 'Disponible';
+                    return `
+                        <button onclick="transferPlayback('${d.id}')" class="w-full text-left p-3 rounded-lg ${activeClass} transition-colors flex items-center gap-3">
+                            <span class="text-xl">${icon}</span>
+                            <div class="flex-1 truncate">
+                                <div class="font-medium ${nameClass}">${d.name}</div>
+                                <div class="text-xs text-slate-400">${statusText}</div>
+                            </div>
+                        </button>
+                    `;
+                }).join('') || '<p class="text-slate-500 text-sm">Aucun appareil détecté.</p>';
+            } else if (data.message) {
+                container.innerHTML = `<p class="text-red-400 text-xs">⚠️ ${data.message}</p>`;
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    async function playUri(uri) {
+        const r = await fetch('/spotify/play', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uri: uri })
+        });
+        const data = await r.json();
+        if (!data.ok) {
+            showSpotifyError(data.message || 'Impossible de lancer la lecture');
+        } else {
+            hideSpotifyError();
+        }
+        updateStatus();
+    }
+
+    async function transferPlayback(deviceId) {
+        const r = await fetch('/spotify/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+        const data = await r.json();
+        if (!data.ok) {
+            showSpotifyError(data.message || 'Impossible de transférer la lecture');
+        } else {
+            hideSpotifyError();
+        }
+        setTimeout(updateSpotifyDevices, 1000);
+        setTimeout(updateStatus, 1000);
+    }
+
+    async function togglePlay() {
+        if (typeof globalTogglePlay === 'function') {
+            globalTogglePlay();
+        } else {
+            const action = isPlaying ? 'pause' : 'play';
+            await spotifyAction(action);
+        }
+    }
+
+    async function spotifyAction(action) {
+        if (typeof globalSpotifyAction === 'function') {
+            try {
+                await globalSpotifyAction(action);
+                return;
+            } catch (e) {
+                console.error("Global player action failed, falling back to API", e);
+            }
+        }
+        
+        const r = await fetch(`/spotify/${action}`, { method: 'POST' });
+        const data = await r.json();
+        if (!data.ok) {
+            showSpotifyError(data.message || 'Action impossible');
+        } else {
+            hideSpotifyError();
+        }
+        updateStatus();
+    }
+
+    function refreshAll() {
+        updateHealth();
+        updateStatus();
+        updateSpotifyDevices();
+        updatePlaylists();
+        updateRecommendations();
+    }
+
+    async function updateHealth() {
+        try {
+            const r = await fetch('/spotify/health');
+            const data = await r.json();
+            const section = document.getElementById('health-section');
+            const badge = document.getElementById('health-badge');
+            const details = document.getElementById('health-details');
+            const h = data.health || {};
+            section.classList.remove('hidden');
+
+            const ok = !!(h.configured && h.authenticated && h.scopes_ok && h.api_ok);
+            badge.textContent = ok ? 'OK' : 'Problème';
+            badge.className = ok
+                ? 'px-3 py-1 rounded-full text-xs font-semibold bg-green-900/30 text-green-400'
+                : 'px-3 py-1 rounded-full text-xs font-semibold bg-red-900/30 text-red-400';
+
+            const problems = [];
+            if (!h.configured) problems.push('Application Spotify non configurée (client/secret).');
+            if (!h.authenticated) problems.push('Non connecté à Spotify.');
+            if (!h.scopes_ok) problems.push('Permissions manquantes (scopes).');
+            if (!h.api_ok) problems.push('Impossible de joindre l’API Spotify.');
+            const hints = problems.length
+                ? '<ul class="list-disc list-inside text-slate-400">' + problems.map(p => '<li>' + p + '</li>').join('') + '</ul>'
+                : '<span class="text-slate-400">Tout est opérationnel.</span>';
+
+            const extra = h.details && Object.keys(h.details).length
+                ? `<pre class="mt-3 text-xs bg-slate-900/60 p-3 rounded border border-slate-800 overflow-x-auto">${JSON.stringify(h.details, null, 2)}</pre>`
+                : '';
+
+            details.innerHTML = hints + extra;
+        } catch (e) {
+            console.error('Failed to update health', e);
+        }
+    }
+
+    async function searchAndPlay() {
+        const query = document.getElementById('spotify-query').value;
+        if (!query) return;
+        
+        const r = await fetch('/spotify/play', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        });
+        const data = await r.json();
+        if (!data.ok) {
+            showSpotifyError(data.message || 'Impossible de lancer la lecture');
+        } else {
+            hideSpotifyError();
+        }
+        updateStatus();
+    }
+
+    function showSpotifyError(msg) {
+        const errorDiv = document.getElementById('spotify-error');
+        const errorMsg = document.getElementById('spotify-error-msg');
+        errorMsg.textContent = msg;
+        errorDiv.classList.remove('hidden');
+        // Scroll to error if not in view
+        errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function hideSpotifyError() {
+        document.getElementById('spotify-error').classList.add('hidden');
+    }
+
+    function copyHealthDetails() {
+        const details = document.getElementById('health-details');
+        const text = details.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.querySelector('[onclick="copyHealthDetails()"] span');
+            const original = btn.textContent;
+            btn.textContent = 'Copié !';
+            setTimeout(() => btn.textContent = original, 2000);
+        });
+    }
+
+    // Refresh every 5–10 seconds
+    updateHealth();
+    updateStatus();
+    updateSpotifyDevices();
+    updatePlaylists();
+    updateRecommendations();
+    
+    setInterval(updateHealth, 10000);
+    setInterval(updateStatus, 5000);
+    setInterval(updateSpotifyDevices, 10000);
+    setInterval(updatePlaylists, 30000);
+    setInterval(updateRecommendations, 60000);
+</script>
+{% endblock %}

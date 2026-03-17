@@ -4,7 +4,7 @@ import asyncio
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from app.storage.logs import append_log
 
 from .deps import get_ipx
+from .services.mqtt import mqtt_service
 from .services.poller import current_state
 from .storage.status_icons import load_icons, save_icons
 
@@ -387,6 +388,19 @@ def diag_icon(icon_id: str, ipx=Depends(get_ipx)):
             on = bool(outs[idx])
             raw = on
             display = "ON" if on else "OFF"
+    elif typ == "shelly":
+        prefix = src.get("prefix")
+        if prefix:
+            topic = f"{prefix}/status/switch:0"
+            status = mqtt_service.get_status(topic)
+            if status:
+                on = status.get("output") is True
+                raw = status
+                display = "ON" if on else "OFF"
+                if "apower" in status:
+                    display = f"{status['apower']:.1f} W"
+            else:
+                display = "OFFLINE"
     else:
         display = icon.get("label") or "—"
 
@@ -512,6 +526,14 @@ def preview(ipx=Depends(get_ipx)):
     digital = st.get("digital") or []
     analog = st.get("analog") or []
 
+    # Ensure Shelly topics are subscribed
+    for it in load_icons():
+        if it.get("enabled"):
+            src = it.get("source") or {}
+            if src.get("type") == "shelly" and src.get("prefix"):
+                mqtt_service.subscribe(f"{src['prefix']}/status/switch:0")
+                mqtt_service.subscribe(f"{src['prefix']}/status/thermostat:0")
+
     outputs_cache: Optional[list[bool]] = None
 
     def _get_outputs() -> list[bool]:
@@ -562,6 +584,69 @@ def preview(ipx=Depends(get_ipx)):
                 on = bool(outs[idx])
                 raw = on
                 display = "ON" if on else "OFF"
+        elif typ == "shelly":
+            prefix = src.get("prefix")
+            if prefix:
+                all_mqtt_data = mqtt_service.get_all_statuses()
+                
+                # 1. Try standard topics first
+                topic_switch = f"{prefix}/status/switch:0"
+                topic_thermo = f"{prefix}/status/thermostat:0"
+                status = mqtt_service.get_status(topic_switch) or mqtt_service.get_status(topic_thermo)
+                
+                # 2. Support Shelly BLU TRV via Gateway
+                if not status:
+                    blutrv_data = None
+                    for t, d in all_mqtt_data.items():
+                        if t.startswith(f"{prefix}/status/blutrv:"):
+                            blutrv_data = d["val"]
+                            break
+                    
+                    if blutrv_data or any(t.startswith(f"{prefix}/status/bthomesensor:") for t in all_mqtt_data):
+                        current_temp = None
+                        target_temp = None
+                        # Sort for consistency
+                        sorted_topics = sorted([t for t in all_mqtt_data if t.startswith(f"{prefix}/status/bthomesensor:")])
+                        for t in sorted_topics:
+                            d = all_mqtt_data[t]
+                            val = d["val"]
+                            if isinstance(val, dict) and val.get("value") is not None:
+                                v = val["value"]
+                                if t.endswith(":202"): # Target
+                                    target_temp = v
+                                elif t.endswith(":203"): # Current
+                                    current_temp = v
+                                elif 10 <= v <= 40 and current_temp is None:
+                                    current_temp = v
+                                elif 4 <= v <= 31 and target_temp is None:
+                                    target_temp = v
+                        
+                        if current_temp is not None:
+                            status = {
+                                "current_C": current_temp,
+                                "target_C": target_temp if target_temp is not None else 0.0,
+                                "output": blutrv_data.get("output") if isinstance(blutrv_data, dict) else False
+                            }
+                
+                # 3. Fallback
+                if not status:
+                    for t, d in all_mqtt_data.items():
+                        if t.startswith(f"{prefix}/status/"):
+                            status = d["val"]
+                            break
+
+                if status:
+                    if "output" in status: # Both Switch and Thermostat (valve) have output
+                        on = status.get("output") is True
+                        raw = on
+                        display = "ON" if on else "OFF"
+                    
+                    if "apower" in status:
+                        display = f"{status['apower']:.1f} W"
+                    elif "current_C" in status:
+                        display = f"{status['current_C']:.1f}°C"
+                else:
+                    display = "OFFLINE"
         else:
             display = it.get("label") or "—"
             raw = None
@@ -770,6 +855,24 @@ async def run_action(
 
         return payload
 
+    if typ == "shelly_toggle":
+        prefix = action.get("prefix")
+        if not prefix:
+            # Fallback to source prefix if available
+            src = icon.get("source") or {}
+            if src.get("type") == "shelly":
+                prefix = src.get("prefix")
+
+        if not prefix:
+            _log_icon("action_error", icon_id=icon_id, action=typ, error="prefix missing")
+            raise HTTPException(400, "Shelly topic prefix missing")
+
+        topic = f"{prefix}/rpc"
+        payload_mqtt = {"method": "Switch.Toggle", "params": {"id": 0}}
+        mqtt_service.publish(topic, payload_mqtt)
+        _log_icon("shelly_toggle", icon_id=icon_id, prefix=prefix)
+        return {"ok": True}
+
     _log_icon("action_error", icon_id=icon_id, action=typ, error="unknown action")
     raise HTTPException(400, f"Unknown action type: {typ}")
 
@@ -787,8 +890,8 @@ async def cancel_action(icon_id: str, request: Request = None, ipx=Depends(get_i
         raise HTTPException(404, "Icon not found")
 
     act = icon.get("action") or {}
-    if act.get("type") != "ipx_toggle":
-        _log_icon("cancel_noop", icon_id=icon_id, reason="not_ipx_toggle")
+    if act.get("type") not in ("ipx_toggle", "shelly_toggle"):
+        _log_icon("cancel_noop", icon_id=icon_id, reason="not_timer_capable")
         return {"ok": True, "was_active": False}
 
     relay = _derive_relay_from_icon(icon)

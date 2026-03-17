@@ -63,6 +63,25 @@ AVAILABLE_TOOLS: list[dict[str, Any]] = [
         "params": {"limit": "int", "type": "string", "q": "string"},
         "description": "Derniers journaux filtrables",
     },
+    {
+        "name": "spotify_play",
+        "method": "POST",
+        "url": "/spotify/play",
+        "params": {"query": "string", "type": "string (track|album|playlist)", "uri": "string"},
+        "description": "Joue de la musique sur Spotify. Utiliser query pour une recherche ou uri si connu.",
+    },
+    {
+        "name": "spotify_pause",
+        "method": "POST",
+        "url": "/spotify/pause",
+        "description": "Met la musique Spotify en pause",
+    },
+    {
+        "name": "spotify_status",
+        "method": "GET",
+        "url": "/spotify/status",
+        "description": "Récupère l'état actuel de la lecture Spotify",
+    },
 ]
 
 DEFAULT_MANIFEST: dict[str, Any] = {
